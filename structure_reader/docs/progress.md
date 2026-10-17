@@ -2,6 +2,9 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 最新核验（2026-10-17 21:25后）：GLM补修02正常交付候选29d70d15971b524bc41cf334fa3768ab851186f68005549628ea638dd51abbd4并停止。Codex静态对照HF :1045-1052确认token_idx/top_k_pos双索引实际接入，当前e选择二维gate_up/down片且两个Linear真实消费；两阶段仅4算子/2张量变化，其余与上一轮一致，前4组修复保持。修前57文件仅提取器/检查器/自身测试3文件变更，旧三候选21文件未变。实际44+57+121项rc0、两build同固定ID/reused、7交付/11tool_sources同源、0 HTML断链；wrong_av/源码漂移/未知模型3隔离CLI均rc1/0HTML。[复核04](acceptance/hf_m1_review04.md)，细证据hf_m1/codex_review04/。仅已知修复范围认可，尚非正式M1/用户阅读通过。
+- 已首次正式下发M1独立验证：原可见Terminal22「LLMarchi HF M1 验证 DeepSeek」/huoshanai/deepseek-v4.1-flash，界面完整收到gate/round01/task.md并processing。75文件联合freeze SHA3c0e7d2c7b0bad6bd8f4f20050d7a230e30b2f9177e942d576ced0dc382c05ca，task SHA758f003feb2dd27c0717ee9b530b4b5b4a89b17e4b5cf35793afd9ad59742e2f，派单codex_gate_dispatch01.json。需逐项独立核实当前0error/18warning/4manual诊断（包含旧启发式对三输入Indexer及专家2D片的未定位），不能将manual当产品错或忽略为通过。只新增本轮独立测试/证据，冻结产品/输入/旧测试候选只读；预期gate/round01/independent_result.md、result.json、开始结束指纹及原始日志。GLM/Qwen均等待，不重发开发单/正式验证；此条覆盖下方DeepSeek空闲/补修02处理中历史。正式结果回来后Codex复核再给用户阅读，browser/native Excel/user reading仍未通过，M2/M3未启。
+
 - 最新主干核验（2026-10-17 21:10后）：GLM正常交付opencode_glm_fix_result01.md/候选0e091374fb72ae67cc6e9b3f3d86f57c346dafafcb2f63620f1aca371d3008e7。Codex实际44+57+121项rc0，两次build-hf rc0同ID/reused、7产物和11tool_sources同源，旧两候选14文件未变；修前57项仅提取器/检查器/自身测试3文件变更。前4组overlap/条件、i_scores、routed_view/专家分行、默认position维度已落盘关闭；剩单专家寻址：moe_expert_weight漏token_idx实际输入，两Linear仍直接引用3D权重库未显式绑定e的2D片。[正式复核](acceptance/hf_m1_review03.md)，细证据hf_m1/codex_review03/result.json及fix01_facts.json。
 - 原可见Terminal25同会话已正式收到opencode_glm_fix02.md并processing，glm-5.3-flash保持，任务SHA82d158789038785f2b24bd210279b471470db7e2b386c6ab6d9b29af38e8e150，派单codex_glm_fix_dispatch02.json，修前基线codex_review03/before_glm_fix02_products.json。仅补此索引/权重片链，不追加其它粒度/通用守卫/测试矩阵，不改Excel和独立验证/progress/输入旧候选历史；预期opencode_glm_fix_result02.md及新候选/logs/opencode_glm_fix02_*。下方补修01处理中已过时勿重发，Qwen和DeepSeek等待，正式M1验证未派，用户阅读未通过。
 
