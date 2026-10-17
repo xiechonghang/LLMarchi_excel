@@ -2,6 +2,10 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+
+- 最新图示清理复核06（2026-10-18 04:19后）：原GLM修复04一次收尾正常完成，交付5411cee8243a3a361d5d5991c5838d210e216d7d743fff0ba8e5ecfd4438d3be并空闲。Codex按修前SHA内存反向还原确认只有删除残留_anchor_free调用及一行注释，AST无残留/未定义下划线调用。实际HTML与b72e逐字节相同，JSON/xlsx/effective_config与29d70不变，7当前构建字节/12工具源及63旧候选保护匹配；GLM原始29图+44页面rc0、两真实build同新ID第二次reused已核。Codex只复用既有参数化round02检查显式新候选rc0：完整块0遮挡、42模块缓存548实际有向边0错、链接/间距保持，不重复模型或Excel门禁。[复核06](acceptance/hf_m1_diagram_review06.md)，证据hf_m1/codex_diagram_review06/。
+- 已原可见Terminal22「LLMarchi HF M1 验证 DeepSeek」/huoshanai/deepseek-v4.1-flash同会话完整收到diagram_gate/round03/task.md并processing，任务SHAa04829d6561053eb71f2023164b06516b3ffa11a8ae6c92257a2fdb5858aaeb9，96文件freeze SHA097d74c530bb6ebaf694a3ff7fe6670448dce3219ddffa275c3750161421b778、63旧候选保护，含两轮共12份旧独立检查。派单codex_diagram_gate_dispatch03.json。仅复用既有参数化检查/正负例及最小新身份记录做展示最终复验，不复制框架/重审模型/跑旧门禁。预期本轮independent_result.md/result.json、原始日志和开始结束指纹。GLM/Qwen空闲，下方GLM收尾处理中已过时；15分钟ACTIVE规则跟踪本轮。静态工程/真实浏览器/用户阅读分开，M2/M3未启。
+
 - 最新图示复核05（2026-10-18 04:04后）：GLM修复04正常交付b72e2027d2e202512e8332f835de4d8e15c15b3ac7c48c87a4ed5054eb605626并空闲。Codex29图+44页面rc0，复用旧round02只读checker显式检查新候选rc0；44图整块/中心遮挡0、548实际边方向0错、间距/画布保持，当前7字节/12工具源/旧输入候选保护同源，JSON/xlsx与29d70不变，GLM两真实build rc0同ID/reused。[复核05](acceptance/hf_m1_diagram_review05.md)，证据hf_m1/codex_diagram_review05/。
 - 暂不派新独立门禁：代码:853仍残留已删_anchor_free调用（1调用/0定义），当前样板短路未触发，不虚称当前build报错；只回原GLM完成修复04同一任务的一行清理，codex_diagram_fix04_followup01.md，预期opencode_glm_diagram_fix_result04_followup01.md及新身份/logs。保留已正确整块图，禁止恢复anchor-only降级/重写布局或新增功能。下方修复04处理中已过时，旧b72e及全部候选历史只读；原可见Terminal25已完整收到该一次续做并processing，任务SHAe3dab7bc31a8201b7e8f2de3411bdc2685bd56a3ae4bd570719a5b1a2f06b4ee，派单codex_diagram_fix04_followup_dispatch01.json；DeepSeek/Qwen空闲，15分钟ACTIVE规则同步。新展示独立/真实视觉/用户阅读仍未通过，M2/M3未启。
 
