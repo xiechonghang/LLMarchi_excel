@@ -2,6 +2,9 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 最新主干核验（2026-10-17 21:10后）：GLM正常交付opencode_glm_fix_result01.md/候选0e091374fb72ae67cc6e9b3f3d86f57c346dafafcb2f63620f1aca371d3008e7。Codex实际44+57+121项rc0，两次build-hf rc0同ID/reused、7产物和11tool_sources同源，旧两候选14文件未变；修前57项仅提取器/检查器/自身测试3文件变更。前4组overlap/条件、i_scores、routed_view/专家分行、默认position维度已落盘关闭；剩单专家寻址：moe_expert_weight漏token_idx实际输入，两Linear仍直接引用3D权重库未显式绑定e的2D片。[正式复核](acceptance/hf_m1_review03.md)，细证据hf_m1/codex_review03/result.json及fix01_facts.json。
+- 原可见Terminal25同会话已正式收到opencode_glm_fix02.md并processing，glm-5.3-flash保持，任务SHA82d158789038785f2b24bd210279b471470db7e2b386c6ab6d9b29af38e8e150，派单codex_glm_fix_dispatch02.json，修前基线codex_review03/before_glm_fix02_products.json。仅补此索引/权重片链，不追加其它粒度/通用守卫/测试矩阵，不改Excel和独立验证/progress/输入旧候选历史；预期opencode_glm_fix_result02.md及新候选/logs/opencode_glm_fix02_*。下方补修01处理中已过时勿重发，Qwen和DeepSeek等待，正式M1验证未派，用户阅读未通过。
+
 - 最新主干复核（2026-10-17 20:55后）：GLM正常交付opencode_glm_result01.md/候选31c183e7ec26ca083c945e4764bc3abd29b11714ad77db9f92760d6527a2d02e并空闲。Codex实际38+57+121项rc0，两次build-hf rc0同ID/reused，7份字节与当前build同源、manifest产物及11tool_sources SHA匹配；原producer/前向/自环与HTML断链关闭，wrong_av及原源码/未知模型三个CLI隔离路径rc1/0HTML。仍changes_required：overlap缺M轴/闭窗条件、i_scores漏新增条目长度、MoE加法前缺view且单专家必要矩阵乘/向量运算/索引链未分行、默认position_ids批次维矛盾。[正式复核](acceptance/hf_m1_review02.md)，细证据hf_m1/codex_review02/result.json及source_shape_findings.json；不扩通用门禁/长度矩阵。
 - 已在原可见Terminal25同一GLM会话正式提交opencode_glm_fix01.md并确认完整收到/processing，huoshanai/glm-5.3-flash保持；任务SHA7cb0aabc477776704bc14699a29d3ce759ab303e299c580ed0b62a27599c1117，派单codex_glm_fix_dispatch01.json，修前57项产品/fixture基线codex_review02/before_glm_fix01_products.json。预期opencode_glm_fix_result01.md与新候选、logs/opencode_glm_fix01_*。只改4组实际源码/阅读事实，不改Excel/独立测试/progress/旧输入候选历史。Qwen已认可模块保持空闲，DeepSeek等固定候选，未派正式M1独立验收，用户阅读仍未通过。下方GLM接管01处理中为历史，勿重发。
 
