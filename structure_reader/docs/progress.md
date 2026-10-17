@@ -2,6 +2,8 @@
 
 ## 当前执行状态：HF M1已派发（2026-10-17 15:38，Asia/Shanghai）
 
+- 用户最新要求pi改用qwen3.8flash：已在原Terminal21 /model选择器确认huoshan-api/qwen3.8-flash；为切换人工中止旧GLM响应，保留现有会话与已保存文件，续做提示已收到且Working。原Excel文件边界不变，Claude/opencode未中断。pi_task.md模型约束已同步，当前SHA256 b0202e1fd1c67d72d660228c4c621a03625e09800e5554eef3cd98bfb53aa828；原派单SHA保留历史。记录.work/coordination/hf_m1/codex_pi_model_switch01.json。以下glm描述仅为最初派发历史，当前以Qwen为准。
+
 - 唯一当前主线为[已确认需求](requirements_alignment_2026_10_17.md)、[实施计划v5](../../hf_docs/project_execution_plan_v5.md)及[复用核查](hf_reuse_audit_2026_10_17.md)。用户授权Codex派单与验收、Claude主干开发、pi独立并行开发、opencode验证测试，均通过新建VS Code可见终端启动；旧B4/完整V2门禁不继续。
 - 输入来源已按用户补充写明：scripts/download_hf_model.py将无权重模型资料下载到models/，读取其中根config.json；模型实现来自hflib/transformers官方本地检出及其配置类/必要调用定义。禁止借旧reference推理程序充当HF实现事实。本轮不重新下载，不加载权重，不运行模型参考程序。
 - M1目标为真实layer_idx=4的完整Prefill Decoder及完整Decode Decoder，涵盖mHC、CSA Attention/KVCache、TopK MoE；同源离线HTML与仅Prefill/Decode两表xlsx。其余配置实际变体留M2，整网至logits与Skill留M3。采用静态结构核查，不恢复旧长度矩阵测试。

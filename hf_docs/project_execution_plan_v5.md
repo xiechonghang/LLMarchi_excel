@@ -136,7 +136,7 @@ xlsx为必需交付。本机工程解释器已能发现openpyxl，但实现阶�
 
 - Codex维护需求/计划、划定范围、审查实际成果并记录验收。当前任务只完成重规划，不自行接手产品实现。
 - Claude承担HF事实提取、规则、检查与构建主干；按用户最新要求在VS Code为新阶段新增项目终端并启动claude新对话，不复用旧B4上下文。先核对项目，保留默认模型/账户与既有权限边界。
-- 用户已允许pi并行，指定glm5.3flash。按最新要求新增VS Code项目终端启动pi新对话；以docs/hf_reading_contract_v1.md冻结接口，先独立承担operator_workbook.py及自身测试，不修改Claude文件。先确认真实模型，不静默替换。
+- 用户已允许pi并行，最新指定qwen3.8flash（pi模型ID qwen3.8-flash），覆盖先前glm5.3flash。按最新要求新增VS Code项目终端启动pi新对话；以docs/hf_reading_contract_v1.md冻结接口，先独立承担operator_workbook.py及自身测试，不修改Claude文件。先确认真实模型，不静默替换。
 - opencode在新增VS Code项目终端启动新对话，保持huoshanai/deepseek-v4.1-flash；先做独立期望/测试准备（产品pending），再对新里程碑当前冻结版本发自包含验证任务；不重复旧阅读门禁或把旧参考V2通过当新HF通过。用户可先阅读明确标为候选的样板，工程独立结论随后补齐；二者不互相代签。
 - 不后台/隐藏调用模型，不读取凭据、其他项目或权重，不安装下载或导入执行参考模型。依赖确有缺失时记录实际阻断再处理。
 - 开发按工作包本地commit，提交注明范围。models/、hflib/继续Git忽略且只读；旧outputs/.work不自动入库或清理。
