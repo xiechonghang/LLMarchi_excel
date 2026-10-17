@@ -1,6 +1,8 @@
 # progress：当前HF阅读样板与旧参考实现历史
 
-## 当前执行状态：HF M1已派发（2026-10-17 15:38，Asia/Shanghai）
+## 当前执行状态：HF M1首版已复核，Claude定点修复01处理中（2026-10-17，Asia/Shanghai）
+
+- Codex本轮定时复核确认Terminal20正常done5:59PM/claude_result.md交付；真实候选d4a8e60be16a2fc214d4d87da569f1ef62eec2767f6cebb62c4b33aba20a16b8保留只读。实际HF25项/0.570秒、Excel47项/1.379秒、独立准备98项均原始rc0，两次真实build-hf rc0同ID/reused，7产物与当前build字节一致/6份manifest文件SHA及11tool_sources匹配，两表xlsx回读通过。但M1未认可：真实producer断开/专家自环/mHC转置rank伪连接、CSA/Indexer gate-overlap链遗漏与q_residual输入错误、Attention概率长度/topk-cache长度/layout矛盾、HTML56目标/952链接缺失；错误AV输入原始校验零issue，临时源码sigmoid改cos及未知model key三个隔离CLI均rc0错误发布HTML（真实输入/候选未改）。[正式复核](acceptance/hf_m1_review01.md)，详细证据hf_m1/codex_review01/。已在原可见Terminal20同会话下发claude_fix01.md并确认完整收到/Improvising处理中；默认Fable5/high effort/账户权限保持，不clear、不重发原任务。预期claude_fix_result01.md及新候选；只修M1真实数据流/必要静态语义与来源/联查，不恢复旧B4或长度矩阵。pi修复范围已认可保持空闲；opencode准备已认可保持空闲，正式产品验证未派；browser/native Excel/user reading仍未通过，不进入M2。
 
 - 2026-10-17T17:08:40.635848+08:00 Codex定时复核：Terminal20 Claude出现API Error响应中断并done5:03PM；已核对实际保存的HF注册/规则/提取器初稿，在原可见会话发送一次从已保存进度继续的指令，确认完整收到且Smooshing spinner恢复。记录hf_m1/codex_claude_api_resume01.json；未clear/切模型账户权限/重发整单。pi修复01正常交付且空闲；Codex47项/1.412秒原始rc0，原43项保留，原duplicate_symbol_input实际回放I24正确取p_hidden、I25明确歧义且不取冲突值、K25标明两参数id，参数顺序反转仍正确，正常合成xlsx SHA f961ecff…与初版逐字节一致。Excel导出器修复范围认可，证据hf_m1/codex_pi_fix_review01/result.json；真实HF文档集成/原生Excel/用户阅读仍pending。opencode准备已认可保持空闲，不重派正式门禁；等待Claude真实M1交付。
 
