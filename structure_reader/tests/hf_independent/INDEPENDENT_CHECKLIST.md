@@ -56,7 +56,8 @@ sliding_window 128；hc_mult 4；hc_sinkhorn_iters 20；hc_eps 1e-6；index_n_he
 - 分组输出投影：`o_a_proj`（8 组，组内 4096→1024，`[8192,4096]`）→ `flatten` → `o_b_proj[4096,8192]`。
 - eager 路径：`QK→scale→+mask→拼 sink→减 max→softmax→去 sink→AV`；HF 明确禁用 flash/sdpa/flex，`_can_compile_fullgraph=False`。
 - CSA cache：`DeepseekV4CSACache(DynamicSlidingWindowLayer)`，`compress_rate=4`；`buffer_kv/gate`、`compressed_kv`、`entry_count` 均按 `{"compressor","indexer"}` 分键；`overlap_kv/gate` 仅持久 `chunk[:,-1,:,:512]`（Ca）。
-- **读视图 vs 持久存储**：`update` 返回 `full=cat([keys,new])` 供本次 Attention；持久 `keys=full[..., -127:]`（`sliding_window-1`），`values=keys`。decode 但 `seq_len==1` 时压缩器返回 `(compressed_kv, None)`，不产生 block_bias。
+- **读视图 vs 持久存储**：`update` 返回 `full=cat([已存尾部,new])` 供本次 Attention（长度可达 W-1+new）；持久 `keys=full[..., -(W-1):]`，长度 `min(累计已输入, W-1)`，**上限 127**（`sliding_window-1`），`values=keys`。请勿把回看视图长度当持久长度。
+- **decode 单 token 分支仅限 HCA**：`DeepseekV4HCACompressor.forward` 有 `if seq_len==1 or compressed_len==0: return compressed_kv, None`，故 HCA 不出 block_bias；**CSA 无此短路**，即便 decode 单 token 也由 Indexer top-k 生成真实 `block_bias`（`scatter_` 后 `[..., :compressed_len]`）。本样板层为 CSA，不得套用 HCA 的 None 分支。
 - 压缩：CSA 双序列 `[B,n_win,2m,512]`（Cb 当前窗 + 上一窗 Ca），HCA 单序列；窗口按 `compress_rate` 对齐，余量留 buffer。
 - Indexer：`∑_h w·ReLU(q·K)`, top-k=min(512,compressed_len)；越界补偿 `-1` 哨兵；CSA `block_bias` 用 `scatter_` 置 0，多余列 `compressed_len` 切片去掉；HCA `block_bias` 用 `entry_idx >= (pos+1)//m` 掩 -inf。
 - mask：三类 layer_type 映射同一 `create_sliding_window_causal_mask`，overlay 规则 `kv_idx > q_idx - sliding_window`；mask 尺寸取自 cache `get_mask_sizes`；压缩 KV 拼接后 mask 与 block_bias 拼接，**不得 0 填充**。
@@ -89,7 +90,8 @@ sliding_window 128；hc_mult 4；hc_sinkhorn_iters 20；hc_eps 1e-6；index_n_he
 - `test_hf_decoder_layer.py`：两处 mHC 装配、eager 标志、logits 终点、mask 拼接非 0 填充。
 
 运行（工程 Python，PYTHONDONTWRITEBYTECODE=1）：
-`<eng-python> structure_reader/tests/hf_independent/run_checks.py`（98 项）。
+`<eng-python> structure_reader/tests/hf_independent/run_checks.py`（121 项）。
+产品数据检查：`<eng-python> structure_reader/tests/hf_independent/run_product_checks.py --candidate <显式目录>`（read-only，issue 分 error/warning/manual；error>0 时 rc=1，非通过）。
 
 ## 7. 产品 pending（交付冻结后由正式验证任务执行）
 

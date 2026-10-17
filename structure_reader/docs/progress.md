@@ -2,6 +2,9 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 最新结论（2026-10-17 22:00前后）：原可见Terminal22 DeepSeek正常完成正式M1 round01并空闲。Codex已读实际独立检查/正负例/源码及日志，复跑24项与固定候选检查rc0；75冻结+21旧候选文件再复算一致、新增7测试SHA一致。独立两真实build同29d70d15971b524bc41cf334fa3768ab851186f68005549628ea638dd51abbd4/reused、7现行字节同源、三隔离CLI rc1/0HTML。4manual逐源码核实、18warning属复合算子中间声明/byproduct，未把启发式未定位直接当通过。正式裁定仅engineering_gate=passed；browser_visual=blocked/not_verified、native_excel=not_verified、user_reading=not_passed。[正式记录与阅读入口](acceptance/hf_m1_engineering_gate01.md)，独立证据hf_m1/gate/round01/，Codex复核hf_m1/codex_gate_review01/。
+- 当前等待用户阅读固定HTML和两表xlsx，GLM/Qwen/DeepSeek均已停止等反馈，不重派开发/正式验证、不进入M2/M3。页面冗余中间声明是否影响理解留给阅读反馈，不据此扩展开发；历史候选/输入/门禁不动。下方正式验证处理中状态已过时。15分钟检查只核对新反馈/意外变更/公开阻断，无变化静默，不反复通知已通过结论。
+
 - 最新核验（2026-10-17 21:25后）：GLM补修02正常交付候选29d70d15971b524bc41cf334fa3768ab851186f68005549628ea638dd51abbd4并停止。Codex静态对照HF :1045-1052确认token_idx/top_k_pos双索引实际接入，当前e选择二维gate_up/down片且两个Linear真实消费；两阶段仅4算子/2张量变化，其余与上一轮一致，前4组修复保持。修前57文件仅提取器/检查器/自身测试3文件变更，旧三候选21文件未变。实际44+57+121项rc0、两build同固定ID/reused、7交付/11tool_sources同源、0 HTML断链；wrong_av/源码漂移/未知模型3隔离CLI均rc1/0HTML。[复核04](acceptance/hf_m1_review04.md)，细证据hf_m1/codex_review04/。仅已知修复范围认可，尚非正式M1/用户阅读通过。
 - 已首次正式下发M1独立验证：原可见Terminal22「LLMarchi HF M1 验证 DeepSeek」/huoshanai/deepseek-v4.1-flash，界面完整收到gate/round01/task.md并processing。75文件联合freeze SHA3c0e7d2c7b0bad6bd8f4f20050d7a230e30b2f9177e942d576ced0dc382c05ca，task SHA758f003feb2dd27c0717ee9b530b4b5b4a89b17e4b5cf35793afd9ad59742e2f，派单codex_gate_dispatch01.json。需逐项独立核实当前0error/18warning/4manual诊断（包含旧启发式对三输入Indexer及专家2D片的未定位），不能将manual当产品错或忽略为通过。只新增本轮独立测试/证据，冻结产品/输入/旧测试候选只读；预期gate/round01/independent_result.md、result.json、开始结束指纹及原始日志。GLM/Qwen均等待，不重发开发单/正式验证；此条覆盖下方DeepSeek空闲/补修02处理中历史。正式结果回来后Codex复核再给用户阅读，browser/native Excel/user reading仍未通过，M2/M3未启。
 

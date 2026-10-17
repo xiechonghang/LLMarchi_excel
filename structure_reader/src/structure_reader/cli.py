@@ -1149,6 +1149,26 @@ def _build_parser() -> argparse.ArgumentParser:
     build_parser.add_argument(
         "--json", action="store_true", help="以 JSON 摘要输出"
     )
+    hf_parser = commands.add_parser(
+        "build-hf",
+        help="HF decoder 阅读样板构建（transformers/eager）：reading_document + 单文件离线 HTML"
+             " + 两表 xlsx（outputs/<model_key>/<analysis_id>/）",
+    )
+    hf_parser.add_argument(
+        "--model", required=True,
+        help="模型键（当前仅 deepseek_v4_flash_0731_hf）",
+    )
+    hf_parser.add_argument(
+        "--layer-index", type=int, default=4,
+        help="样板层索引（默认 4：CSA + TopK MoE；其余变体属里程碑二）",
+    )
+    hf_parser.add_argument(
+        "--workspace-root", default=None,
+        help="工作区根目录；缺省从包位置向上定位，不依赖 cwd",
+    )
+    hf_parser.add_argument(
+        "--json", action="store_true", help="以 JSON 摘要输出"
+    )
     return parser
 
 
@@ -1160,5 +1180,76 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_inspect(args)
     if args.command == "build":
         return _cmd_build(args)
+    if args.command == "build-hf":
+        return _cmd_build_hf(args)
     parser.error(f"未知命令: {args.command}")  # pragma: no cover
     return 2  # pragma: no cover
+
+
+def _cmd_build_hf(args: argparse.Namespace) -> int:
+    """HF 阅读样板构建命令：提取→检查→HTML/xlsx→原子落盘→失败隔离。"""
+    model_key = args.model
+    try:
+        workspace_root = (
+            Path(args.workspace_root).resolve() if args.workspace_root else find_workspace_root()
+        )
+    except StructureReaderError as exc:
+        return _fail_exit(args, model_key, exc.__class__.__name__,
+                          {"named_structure_reader_error": True, "message": str(exc),
+                           "traceback": traceback.format_exc()}, str(exc))
+    try:
+        from .build_hf_decoder import HfBuildError, run_hf_build
+
+        result, documents = run_hf_build(
+            workspace_root, _project_root(), layer_index=args.layer_index, model_key=model_key,
+        )
+        target = result.output_dir
+        outcome = _materialize(target, documents)
+    except HfBuildError as exc:
+        return _fail_exit(
+            args, model_key, "hf_build_error",
+            {"named_structure_reader_error": True, "message": str(exc),
+             "traceback": traceback.format_exc()},
+            str(exc),
+        )
+    except OutputConsistencyError as exc:
+        return _fail_exit(
+            args, model_key, "output_consistency_conflict",
+            {"message": str(exc), "output_dir": str(target)},
+            str(exc),
+        )
+    except Exception as exc:  # 未预期异常也留具名记录
+        return _fail_exit(
+            args, model_key, exc.__class__.__name__,
+            {"named_structure_reader_error": False, "message": str(exc),
+             "traceback": traceback.format_exc()},
+            str(exc),
+        )
+
+    deliverables = documents["run_manifest.json"]
+    _emit(
+        args,
+        [
+            "status: success",
+            f"阶段: HF decoder 阅读样板（transformers/eager；里程碑一）",
+            f"model: {model_key}（layer_idx={args.layer_index}）",
+            f"workspace_root: {workspace_root}",
+            f"analysis_id: {result.analysis_id}",
+            f"output_dir: {target}",
+            "files:",
+            *(f"  - {name}  sha256={__import__('hashlib').sha256(data).hexdigest()}"
+              for name, data in sorted(documents.items())),
+            f"result: {outcome}" + ("（既有目录一致，幂等复用）" if outcome == "reused" else ""),
+        ],
+        {
+            "status": "success",
+            "stage": "HF decoder 阅读样板（里程碑一）",
+            "model_key": model_key,
+            "layer_index": args.layer_index,
+            "analysis_id": result.analysis_id,
+            "output_dir": str(target),
+            "reused": outcome == "reused",
+            "files": sorted(documents),
+        },
+    )
+    return 0

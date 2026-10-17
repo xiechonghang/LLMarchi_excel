@@ -103,9 +103,24 @@ class CacheUpdateTests(unittest.TestCase):
             with self.subTest(needle=needle):
                 self.assertIn(needle, self.modeling)
 
-    def test_decode_single_token_returns_no_block_bias(self):
-        self.assertIn("if seq_len == 1 or compressed_len == 0:", self.modeling)
-        self.assertIn("return compressed_kv, None", self.modeling)
+    def test_single_token_none_block_bias_is_hca_only_not_csa(self):
+        # HCA compressor short-circuits single-token / empty-compression calls with (kv, None)
+        hca = self.modeling.split("class DeepseekV4HCACompressor", 1)[1].split("class DeepseekV4IndexerScorer", 1)[0]
+        self.assertIn("if seq_len == 1 or compressed_len == 0:", hca)
+        self.assertIn("return compressed_kv, None", hca)
+        # CSA compressor has NO such early return: even for a single decode token it
+        # builds a real block_bias from the indexer top-k.
+        csa = self.modeling.split("class DeepseekV4CSACompressor", 1)[1].split("class repeat_kv", 1)[0]
+        self.assertNotIn("seq_len == 1 or compressed_len == 0", csa)
+        self.assertIn("block_bias.scatter_(-1, safe_indices.unsqueeze(1), 0.0)", csa)
+        self.assertIn("return compressed_kv, block_bias[..., :compressed_len]", csa)
+
+    def test_persistent_length_is_min_cumulative_and_cap(self):
+        # persistent keys = last W-1 positions of the running (prior_stored + new) tensor,
+        # i.e. min(cumulative_seen, W-1); the cap is W-1=127, not the read-view length.
+        self.assertIn("self.keys = full[:, :, -self.sliding_window + 1 :, :]", self.modeling)
+        self.assertEqual(min(7, 128 - 1), 7)
+        self.assertEqual(min(500, 128 - 1), 127)
 
 
 class CompressionAndMaskTests(unittest.TestCase):
