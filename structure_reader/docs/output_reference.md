@@ -1,3 +1,5 @@
+> **产物范围说明（2026-10-17）**：下文为既有参考实现产物。当前需求的HF样板及两表.xlsx尚未落地，预期见[需求书](requirements_alignment_2026_10_17.md)与[实施计划v5](../../hf_docs/project_execution_plan_v5.md)，不把预期字段冒称现有能力。
+
 # output_reference：产物文件与字段说明
 
 适用版本：structure_reader 0.1.0（2026-10-16）。字段描述以实际落盘产物为准：inspect 扫描包（`outputs/_inventory/deepseek_v4_flash_0731/<content_id>/`，schema v2）与 build 阅读产物（`outputs/deepseek_v4_flash_0731/<analysis_id>/`）。后续新增字段时更新本文件。

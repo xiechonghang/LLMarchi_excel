@@ -1,28 +1,29 @@
-# HF 模型资料与结构阅读工作区
+# 模型结构阅读工作区
 
-当前任务：建设以 DeepSeek-V4-Flash-0731 为主案例的静态结构阅读工具。[项目推进说明书](hf_docs/project_execution_handbook_v4.md)是新对话接续入口：v3 管产品需求，v4 管垂直切片，说明书管最新分工与恢复步骤。
+当前目标：以Hugging Face Transformers模型源码和对应HF `config.json`为依据，生成能够读懂算子连接、参数、维度及KVCache的离线HTML与Excel。逐模型适配，Skill作为入口。
 
-执行分工：Codex 通过终端派单并最终核验；Claude CLI 开发；opencode CLI + DeepSeek V4.1 Flash 独立测试。保留里程碑门禁，取消逐微任务交接仪式。
+当前先做DeepSeek HF decoder阅读样板：Attention（含KVCache）、MoE和mHC；完整Prefill在前、完整Decode在后。Excel只有两张自包含工作表。最终补齐配置实际使用的结构变体和粗粒度整网至logits；不分析训练、采样或设备优化执行。
 
-当前快照（2026-10-13）：S0 历史已批准；V1 准备代码已有、尚未启动新执行链；本地 892 项回归中 1 failure、2 errors；模型结构阅读页仍未交付。下一包是修复规则/求值器红项，随后建立 CSA·TopK 真实阅读闭环。历史阶段快照保存在[阶段性记录目录](hf_docs/stage_reports/README.md)。
+## 当前接续入口
 
-## 当前文件放在哪里
+1. [已确认需求](structure_reader/docs/requirements_alignment_2026_10_17.md)。
+2. [既有代码复用核查](structure_reader/docs/hf_reuse_audit_2026_10_17.md)：直接保留、适配与退出当前范围的资产。
+3. [实施计划v5](hf_docs/project_execution_plan_v5.md)：替换旧V1/V2/V3和B4主线。
+4. [最新实际进度](structure_reader/docs/progress.md)：只读顶部当前状态，旧条目保留历史。
 
-- `hf_docs/`：HF 资料、v3 需求、v4 执行计划、推进说明书和方法说明；旧计划/审查记录放在 `hf_docs/archive/`。[资料入口](hf_docs/README.md)。
-- `models/`：原始模型资料、配置、分词、参考源码及权重输入。[模型目录说明](models/readme.md)。
-- `hflib/`：第三方软件源码输入，包括 Transformers、Diffusers。[软件目录说明](hflib/readme.md)。
-- `scripts/`：现有工作区级工具。[模型下载脚本](scripts/download_hf_model.py)。
+## 现在实际有什么
 
-## 工程与产物位置
+既有工程已实现参考推理源码的输入扫描、结构图、离线页面、CSV和DSpark集成；这些成果的依据是模型仓库的`inference/model.py`，HF源码此前只是对照输入。**它们不能直接当作新需求的HF实现结果。**
 
-**S0已通过Codex验收。** 用户明确授权后，Harness完成定版133/133及进度契约回归137/137；Codex核心/产物28项与137项本地回归通过。注册、inspect、固定基线和使用文档均已交付，后续按推进说明书进入 V1，不再补旧逐单闭环。[本轮最终审核](structure_reader/outputs/_coordination/s0/2026_10_12_round_02/audit/final_acceptance.md)、[能力状态](structure_reader/outputs/_coordination/s0/2026_10_12_round_02/audit/capability_status.json)和[工程使用指南](structure_reader/docs/user_guide.md)记录实际情况；首轮失败与审批阻断保留历史。各目录职责如下：
+当前已完成新需求确认、代码复用核查和重规划；新HF提取器、双阶段页面、两表.xlsx和Skill尚未交付。下一包为真实HF decoder样板闭环，不再先补旧DSpark门禁。已有命令及历史能力见[工程README](structure_reader/README.md)。
 
-- `structure_reader/scripts/read_model_structure.py`：统一用户命令入口。
-- `structure_reader/src/`：提取、核验、渲染与导出库代码。
-- `structure_reader/configs/`：分析设置、模型注册与已审查基线。
-- `structure_reader/tests/`：验收测试和独立期望数据。
-- `structure_reader/docs/user_guide.md`：使用方式；其他 docs 分别介绍开发与输出字段。
-- `structure_reader/outputs/`：正式阅读页、数据、报告和表格；每次分析有独立目录与交付导航。
-- `structure_reader/.work/`：可丢弃暂存，不作为输入或交付。
+## 目录与版本保护
 
-当前尚无已验收的模型结构阅读页。已落盘模块和协调/审核过程记录位于工程目录；命令与模型结构产物按阶段实现和验收后提供，路径和接口以 v3 为准。
+- `structure_reader/src/`、`tests/`、`configs/`、`scripts/`：产品、测试、输入注册及入口。
+- `structure_reader/docs/`：当前需求、复用核查、进度与工程说明。
+- `hf_docs/`：新计划及背景资料；v3/v4和旧说明书已标为历史。
+- `models/`、`hflib/`：只读模型资料和第三方源码输入，Git忽略，禁止用修改输入修工程。
+- `structure_reader/outputs/`：生成产物与历史候选，Git忽略，原有内容保留。
+- `structure_reader/.work/`：工作暂存与历史协调记录，Git忽略；目前含唯一历史验收证据，不能整体当成可丢弃目录清理。
+
+已建立本地Git跟踪源码、测试、配置、文档；未配置远程仓库。本轮重规划不删除旧代码、候选或证据，不恢复用户已删除的根文档。新正式验收结论按v5保存为可跟踪文档，不再只放在`.work`。

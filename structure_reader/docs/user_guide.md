@@ -1,3 +1,5 @@
+> **范围说明（2026-10-17）**：本指南下方命令描述既有参考实现。新的HF decoder双阶段HTML/Excel尚待开发，使用[已确认需求](requirements_alignment_2026_10_17.md)和[实施计划v5](../../hf_docs/project_execution_plan_v5.md)；不得把旧build输出当作新HF结果。
+
 # user_guide：怎么运行、打开什么、怎么读结果
 
 适用版本：structure_reader 0.1.0（2026-10-16）。所有行为以下述**实际落盘 CLI**为准；尚未实现的命令一律不写用法。

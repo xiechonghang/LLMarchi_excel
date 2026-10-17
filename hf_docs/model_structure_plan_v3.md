@@ -1,3 +1,5 @@
+> **历史需求计划。** 用户2026-10-17已重新确认[当前需求](../structure_reader/docs/requirements_alignment_2026_10_17.md)，执行使用[实施计划v5](project_execution_plan_v5.md)。本文历史条款不再补充或扩大当前范围。
+
 # 模型特征结构阅读工具：项目计划 v3（当前执行）
 
 更新日期：2026-10-13（执行状态更新，计划范围不变）。状态：**S0 passed（Codex批准），S1 in_progress。** 分工见[开发执行规范](development_workflow.md)，S0裁定见[最终审核](../structure_reader/outputs/_coordination/s0/2026_10_12_round_02/audit/final_acceptance.md)，S1进展与实际缺陷见[最新过程审核](../structure_reader/outputs/_coordination/s1/2026_10_12_round_01/audit/retry_2026_10_13_01b.md)。局部IR/统一图文档已有797项回归通过；新增图级引用检查器原版46项独立测试中7项失败，正在返修，不能以旧绿灯批准S1。模型结构阅读页仍未实现；首轮失败/审批阻断记录保留历史。

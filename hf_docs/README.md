@@ -1,3 +1,5 @@
+> **当前工程接续（2026-10-17）**：[已确认需求](../structure_reader/docs/requirements_alignment_2026_10_17.md) → [复用核查](../structure_reader/docs/hf_reuse_audit_2026_10_17.md) → [实施计划v5](project_execution_plan_v5.md)。下文为HF资料与历史计划导航，不代表当前开发状态。
+
 # Hugging Face 资料：Transformers 仓库、官网模型与使用依赖
 
 更新日期：2026-10-11。

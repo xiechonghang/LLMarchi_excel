@@ -1,3 +1,5 @@
+> **当前开发入口（2026-10-17）**：[代码复用核查](hf_reuse_audit_2026_10_17.md)与[实施计划v5](../../hf_docs/project_execution_plan_v5.md)。下文描述既有参考实现，适配HF前必须区分实现身份和配置语义，不直接沿用旧图或DSpark强依赖。
+
 # developer_guide：开发约定、适配与维护
 
 适用版本：structure_reader 0.1.0（2026-10-16）。面向在本工程内继续开发/适配的开发者（Claude CLI 开发、DeepSeek Harness 独立测试、Codex 最终复验的协作分工见 `hf_docs/development_workflow.md`）。

@@ -1,3 +1,5 @@
+> **历史执行说明，已被2026-10-17新需求替换。** 当前接续请读[需求书](../structure_reader/docs/requirements_alignment_2026_10_17.md)、[实施计划v5](project_execution_plan_v5.md)和[progress顶部](../structure_reader/docs/progress.md)。下文旧V1/V2/V3、B4、门禁、无头/可见终端及S0快照仅保留历史，不再决定下一任务。新需求不要求先补完旧参考实现DSpark。
+
 # 模型结构阅读工具：项目推进说明书（v4 分工修订）
 
 更新时间：2026-10-13，Asia/Shanghai。整理者：Codex。

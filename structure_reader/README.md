@@ -1,3 +1,5 @@
+> **当前主线已更新（2026-10-17）。** 用户已确认以Transformers源码和HF config.json为依据，先交DeepSeek HF decoder的Attention/KVCache、MoE、mHC双阶段样板，配离线HTML和Prefill/Decode两表Excel。见[需求书](docs/requirements_alignment_2026_10_17.md)、[代码复用核查](docs/hf_reuse_audit_2026_10_17.md)、[实施计划v5](../hf_docs/project_execution_plan_v5.md)。**新HF适配、页面和Excel尚未实现；下文已有命令与四图/DSpark能力属于旧参考实现，不是HF结构交付。**
+
 # structure_reader
 
 模型特征结构阅读工具。当前状态：**S0 输入扫描 + 结构阅读产物 build 已实现**（`inspect` / `build` 两条命令；四图统一离线阅读页 + DSpark 整体集成图、代表图/变体图数据、场景实例化、同源 CSV 均已交付。DSpark 六组件（Attention/公共 stage×3/首入口/末出口 head/Markov/Confidence）已真实合并为整体集成图并接入 build/阅读页/CSV。阶段全景见 [docs/progress.md](docs/progress.md)）。

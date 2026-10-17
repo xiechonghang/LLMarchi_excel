@@ -1,3 +1,5 @@
+> **历史协作流程。** 当前执行与分工以[实施计划v5](project_execution_plan_v5.md)为准，不恢复本文旧逐单流程。
+
 # v3 开发分工与验收日志规范
 
 **历史规范：2026-10-13 起由[项目推进说明书](project_execution_handbook_v4.md)及 v4 精简流程覆盖。** Codex 仍负责派单与最终核验，但通过终端调用 Claude CLI 和 opencode + DeepSeek；不再使用屏幕派单、逐微任务三件套或补旧交接仪式。以下原始记录保留为历史证据。
