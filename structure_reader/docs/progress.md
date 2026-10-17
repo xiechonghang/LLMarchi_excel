@@ -2,6 +2,12 @@
 
 ## 当前执行状态：HF M1已派发（2026-10-17 15:38，Asia/Shanghai）
 
+- 2026-10-17T16:55:13.690146+08:00 Codex首次定时核查：可见Terminal20 Claude仍spinner正常处理，无API Error，未干预。Terminal21 pi/Qwen已交付导出器；Codex实际43项/1.303秒rc0，合成xlsx回读SHA f961ecff13637af297370fc7da24b653b9793aa325a908daac21d937fba86644与原报告一致，两表经Artifact Tool导入渲染（非原生Excel/用户验收）。但同名H符号导致I24静默取p_topk=8、K24正确指p_hidden=4096的真实联查矛盾已复现；pi_fix01.md（SHA d6c2d161be2376bc7dcc8ae53cc42d32b701da34954dd008af546b6fc61b3445）已在原可见Terminal21派发并确认Working，仅修原Excel范围，不重写框架。预期pi_fix_result01.md，勿重发。Terminal22 opencode准备正常完成/空闲，独立源码期望98项/0.054秒rc0，输入身份与有效配置/关键结构检查通过，仅认可“验证准备”，不代表产品门禁。证据.work/coordination/hf_m1/codex_parallel_review01/result.json及原始命令/回读/两原始复现。真实HF图/HTML/xlsx未交付，不派正式产品验证、不进M2。automation保持ACTIVE/15分钟及Claude API Error原会话自动续做。
+
+- 用户已明确要求“从现在开始启动，15min检查一次”：现有automation已成功更新为ACTIVE，RRULE间隔15分钟，保留Claude API Error原会话自动续做规则及无变化静默规则。本条覆盖此前暂停记录，不新建重复自动化。
+
+- 用户新增续做授权：后续定时检查发现目标Claude可见终端API Error且响应已停止，直接在原会话发送一次从已保存文件/断点继续当前任务的指令，无需另行确认；不/clear、不重发整单、不改范围/模型/账户/权限。确认恢复处理中后等待，同一未变化错误不连发；新一次API Error可再次续做。API Error不能当完成。本轮读取现有automation文件status为ACTIVE、prompt仍写PAUSED，二者矛盾；自动审批拒绝带ACTIVE的规则更新，理由为用户本次只授权检查时的处理规则，未明确恢复运行。已改用安全方式：仅更新规则并设PAUSED，不恢复定时检查。
+
 - 用户最新要求pi改用qwen3.8flash：已在原Terminal21 /model选择器确认huoshan-api/qwen3.8-flash；为切换人工中止旧GLM响应，保留现有会话与已保存文件，续做提示已收到且Working。原Excel文件边界不变，Claude/opencode未中断。pi_task.md模型约束已同步，当前SHA256 b0202e1fd1c67d72d660228c4c621a03625e09800e5554eef3cd98bfb53aa828；原派单SHA保留历史。记录.work/coordination/hf_m1/codex_pi_model_switch01.json。以下glm描述仅为最初派发历史，当前以Qwen为准。
 
 - 唯一当前主线为[已确认需求](requirements_alignment_2026_10_17.md)、[实施计划v5](../../hf_docs/project_execution_plan_v5.md)及[复用核查](hf_reuse_audit_2026_10_17.md)。用户授权Codex派单与验收、Claude主干开发、pi独立并行开发、opencode验证测试，均通过新建VS Code可见终端启动；旧B4/完整V2门禁不继续。
@@ -12,7 +18,7 @@
 - 新Terminal21 pi会话LLMarchi HF M1 Excel：项目cwd，模型界面确认为glm-5.3-flash。pi_task.md完整派发，SHA256 26fa7f98088c696a5720c7f5b978b21ef03715b2be22787a367a89b770c8a234；界面Working，无公开服务错误。仅开发export/operator_workbook.py及tests/hf/test_operator_workbook.py、fixtures/workbook_*；先独立生成/回读真实xlsx，再自包含验证。预期pi_result.md。无需等待或改动Claude源码。
 - 新Terminal22 opencode：项目cwd，界面确认为huoshanai/deepseek-v4.1-flash；现有1.18.4更新提示已跳过。opencode_preparation_task.md完整派发，SHA256 a69e992cb198c4bc5a87efd1894e07ae73dc116a927ec272c0c6cd2ca66dbf0a，界面确认收到处理中。只在tests/hf_independent/**建立独立源码期望/配置与缓存事实及验收测试准备；不改产品。预期opencode_preparation_result.md。准备完成不等于M1正式验证通过。
 - 三方均不得自行提交Git、派发其它模型/子代理或扩大范围；Codex核查文件diff/输入SHA/真实命令退出码及实际页面和xlsx后提交。当前没有HF样板完成/工程通过/浏览器通过/用户阅读通过结论。旧Terminal15保留空闲历史，不复用旧上下文派单。
-- automation保持PAUSED，不自动恢复；提示需对应本次三个任务及新计划，禁止再发旧B4或重复M1。下次核查先通过cua_repl恢复文档并确认目标终端身份，只处理完成、公开错误或权限；持续处理中不因耗时重派。
+- automation现为ACTIVE，每15分钟检查；已保存Claude API Error自动续做规则。禁止再发旧B4或重复M1。下次核查先通过cua_repl恢复文档并确认目标终端身份，只处理完成、公开错误或权限；持续处理中不因耗时重派。
 - 已有本地Git与模型/第三方克隆忽略规则。通用复用验证716+45项rc0仅证明基础可复用。用户已删除的CONTEXT.md和2026_10_17_workspace_structure_review.md保持原工作区删除状态，不恢复、不纳入本轮提交。下文全部为旧参考实现历史，其候选/测试/通过范围不继承为HF结果。
 
 ---
