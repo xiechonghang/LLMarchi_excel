@@ -1,12 +1,14 @@
 # 模型结构阅读实施计划v5：Transformers实现与双阶段阅读
 
-更新：2026-10-17。状态：需求已获用户确认，本计划替换旧V1→V2→V3执行主线；本轮已完成代码复用分析，尚未派发新产品开发任务。
+更新：2026-10-17。状态：需求已获用户确认，本计划替换旧V1→V2→V3执行主线；已完成代码复用分析；M1主干、独立Excel和独立测试准备已在三个新建VS Code可见终端正式派发，当前处理中。
 
 ## 1. 当前唯一执行入口
 
 先读[已确认需求](../structure_reader/docs/requirements_alignment_2026_10_17.md)、[代码复用核查](../structure_reader/docs/hf_reuse_audit_2026_10_17.md)，再按本文推进。最新实际进度只记在[progress顶部](../structure_reader/docs/progress.md)。
 
 用户当前指令优先，其次是已确认需求和本计划。旧model_structure_plan_v3/v4、project_execution_handbook_v4及历史S/V/B/R编号用于查历史，不再补充新需求或决定下一派单。旧参考实现验收结论保留其原范围，不继承为HF实现通过。
+
+输入约定：模型HF资料由scripts/download_hf_model.py无权重下载到models/，其中含config.json；模型实现源码使用用户从GitHub克隆到hflib/transformers的官方Transformers仓库。开发不重新下载或执行模型包参考程序。
 
 当前目标是先交付DeepSeek HF decoder阅读样板：mHC、Attention/KVCache、MoE，prefill与decode各一套完整内容；离线HTML与两表Excel同时交付。后续补齐配置实际启用的变体、整网至logits和项目Skill。Qwen或其他模型不作这个闭环的前置。
 
@@ -52,7 +54,7 @@
 
 HTML和Excel消费同一个对象。可用小型dataclass或明确字典契约实现，不建设通用工作流平台、Python解释器或抽象适配框架。最小对象形成后即可并行实现阅读页与Excel。
 
-### 建议改动位置（均为待实施）
+### 建议改动位置（开发任务已派发，尚未验收）
 
 - 新增rules/deepseek_v4_hf.py、extract/deepseek_v4_hf.py、checks/deepseek_v4_hf_contracts.py。
 - 小范围适配model_registry/inventory/evidence及构建调用点，显式区分旧reference与新HF。
@@ -60,7 +62,7 @@ HTML和Excel消费同一个对象。可用小型dataclass或明确字典契约�
 - 新增export/operator_workbook.py，从同一阅读数据生成xlsx。
 - 构建编排归入build_pipeline，CLI只做参数与导航；不再复制两套HF图构建。
 
-这些路径是实施建议，禁止在文档中称其已存在或已支持。旧inspect/build仍是参考profile现有能力，新HF命令在实现后才加入用户指南。
+这些路径是实施建议；文件是否存在和功能是否支持以实际交付与验收为准。旧inspect/build仍是参考profile现有能力，新HF命令在实现后才加入用户指南。
 
 ## 5. 里程碑一：真实decoder阅读样板
 
@@ -133,9 +135,9 @@ xlsx为必需交付。本机工程解释器已能发现openpyxl，但实现阶�
 ## 9. 协作、版本与接续
 
 - Codex维护需求/计划、划定范围、审查实际成果并记录验收。当前任务只完成重规划，不自行接手产品实现。
-- Claude继续承担HF事实提取、规则、检查与构建主干，通过原项目可见VS Code终端派单；先核对项目和会话，不把旧B4恢复单再次提交。
-- 用户已允许pi并行，指定glm5.3flash。只有阅读数据接口和文件边界明确后，才可通过可见终端将独立HTML或Excel工作分给pi；先确认实际可用模型，不静默替换、不与Claude改同一文件。接口未稳定时不为并行而制造互相等待的开发任务。
-- opencode独立验证保持huoshanai/deepseek-v4.1-flash，对新里程碑当前冻结版本发自包含任务；不重复旧阅读门禁或把旧参考V2通过当新HF通过。用户可先阅读明确标为候选的样板，工程独立结论随后补齐；二者不互相代签。
+- Claude承担HF事实提取、规则、检查与构建主干；按用户最新要求在VS Code为新阶段新增项目终端并启动claude新对话，不复用旧B4上下文。先核对项目，保留默认模型/账户与既有权限边界。
+- 用户已允许pi并行，指定glm5.3flash。按最新要求新增VS Code项目终端启动pi新对话；以docs/hf_reading_contract_v1.md冻结接口，先独立承担operator_workbook.py及自身测试，不修改Claude文件。先确认真实模型，不静默替换。
+- opencode在新增VS Code项目终端启动新对话，保持huoshanai/deepseek-v4.1-flash；先做独立期望/测试准备（产品pending），再对新里程碑当前冻结版本发自包含验证任务；不重复旧阅读门禁或把旧参考V2通过当新HF通过。用户可先阅读明确标为候选的样板，工程独立结论随后补齐；二者不互相代签。
 - 不后台/隐藏调用模型，不读取凭据、其他项目或权重，不安装下载或导入执行参考模型。依赖确有缺失时记录实际阻断再处理。
 - 开发按工作包本地commit，提交注明范围。models/、hflib/继续Git忽略且只读；旧outputs/.work不自动入库或清理。
 - 新正式验收结论与可复验指纹保存在Git跟踪的docs/acceptance下，必要测试fixtures在tests内；生成大产物仍在outputs，记录其内容ID与文件指纹。不要再将唯一正式结论只存入“可丢弃”的.work。

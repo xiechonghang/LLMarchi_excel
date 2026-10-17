@@ -1,14 +1,17 @@
-# progress：V1–V3 执行状态（S0–S8 历史保留）
+# progress：当前HF阅读样板与旧参考实现历史
 
-## 当前执行状态：HF双阶段阅读样板（2026-10-17，新需求重规划）
+## 当前执行状态：HF M1已派发（2026-10-17 15:38，Asia/Shanghai）
 
-- 用户已整体确认[新需求书](requirements_alignment_2026_10_17.md)，并授权据此核查代码复用、替换旧实施计划。[实施计划v5](../../hf_docs/project_execution_plan_v5.md)为当前唯一执行主线，[复用核查](hf_reuse_audit_2026_10_17.md)记录具体保留/适配/退出范围与源码依据。
-- 当前已完成：本地Git保护、需求澄清、30个产品Python文件依赖盘点、HF源码/配置分组分析及新计划文档。新产品开发尚未派发；不把规划完成记为HF工程通过。
-- 直接保留图IR/序列化/引用检查/受限表达式；适配输入注册、HF配置解释、来源、构建和阅读数据；新增HF结构提取/语义检查、双阶段离线页与两表Excel。旧reference/DSpark源码和全部候选/门禁证据保留历史，不再作为新样板前置。
-- 本次针对性复跑：test_graph*.py 716项/1.360秒/原始rc0，test_scenario_evaluator.py 45项/0.001秒/原始rc0；只证明通用基础可继续复用。未跑新HF、xlsx或浏览器验收，未重建旧候选。
-- 新执行顺序：里程碑一真实layer_idx=4双阶段Decoder样板（Attention/KVCache、MoE、mHC，HTML+xlsx）→用户阅读确认→里程碑二当前配置实际启用的四组结构变体→里程碑三整网至logits与Skill。可按明确文件边界并行，不再推进旧B4补修/旧完整V2门禁/旧V3强制第二模型。
-- 当前断点：等待按v5派发“HF decoder样板双阶段闭环”。现有automation实际为PAUSED，保持暂停；恢复前须更新为新计划和实际任务，不使用旧B4监控提示。默认开发仍通过项目可见VS Code终端，Claude主干、pi指定glm5.3flash仅独立边界、opencode指定huoshanai/deepseek-v4.1-flash独立核查。
-- 两份根文档CONTEXT.md及2026_10_17_workspace_structure_review.md在本轮开始前已被删除；保留用户工作区状态，不恢复、不纳入本轮提交。下文全部条目为旧参考实现历史，测试数/候选/通过范围不自动转换成HF结果。
+- 唯一当前主线为[已确认需求](requirements_alignment_2026_10_17.md)、[实施计划v5](../../hf_docs/project_execution_plan_v5.md)及[复用核查](hf_reuse_audit_2026_10_17.md)。用户授权Codex派单与验收、Claude主干开发、pi独立并行开发、opencode验证测试，均通过新建VS Code可见终端启动；旧B4/完整V2门禁不继续。
+- 输入来源已按用户补充写明：scripts/download_hf_model.py将无权重模型资料下载到models/，读取其中根config.json；模型实现来自hflib/transformers官方本地检出及其配置类/必要调用定义。禁止借旧reference推理程序充当HF实现事实。本轮不重新下载，不加载权重，不运行模型参考程序。
+- M1目标为真实layer_idx=4的完整Prefill Decoder及完整Decode Decoder，涵盖mHC、CSA Attention/KVCache、TopK MoE；同源离线HTML与仅Prefill/Decode两表xlsx。其余配置实际变体留M2，整网至logits与Skill留M3。采用静态结构核查，不恢复旧长度矩阵测试。
+- Codex固定了[阅读数据接口v1](hf_reading_contract_v1.md)，SHA256 fff5c23b8e21a4980390191011011e9a4a3468552aea33a742cf6c02d4cff6dd；Claude和pi共同只读，HTML/xlsx消费同一份reading_document，导出器不自行解释模型。任务完整文件位于structure_reader/.work/coordination/hf_m1/。
+- 新Terminal20标题LLMarchi HF M1 开发：在项目cwd以claude --effort high --name启动，界面确认Fable5/high effort、默认账户权限，无其它目录/附件/IDE连接。claude_task.md完整派发，SHA256 05d85d2d541dd92fcc748a8710486efeaf4b769701a175c91a0591ce3212f679；界面确认收到并持续spinner处理中。负责HF配置/提取/语义检查/构建/CLI/HTML及对应测试；不编辑pi和opencode专属路径。预期claude_result.md及真实新候选、阅读JSON/HTML/xlsx、原始命令日志。
+- 新Terminal21 pi会话LLMarchi HF M1 Excel：项目cwd，模型界面确认为glm-5.3-flash。pi_task.md完整派发，SHA256 26fa7f98088c696a5720c7f5b978b21ef03715b2be22787a367a89b770c8a234；界面Working，无公开服务错误。仅开发export/operator_workbook.py及tests/hf/test_operator_workbook.py、fixtures/workbook_*；先独立生成/回读真实xlsx，再自包含验证。预期pi_result.md。无需等待或改动Claude源码。
+- 新Terminal22 opencode：项目cwd，界面确认为huoshanai/deepseek-v4.1-flash；现有1.18.4更新提示已跳过。opencode_preparation_task.md完整派发，SHA256 a69e992cb198c4bc5a87efd1894e07ae73dc116a927ec272c0c6cd2ca66dbf0a，界面确认收到处理中。只在tests/hf_independent/**建立独立源码期望/配置与缓存事实及验收测试准备；不改产品。预期opencode_preparation_result.md。准备完成不等于M1正式验证通过。
+- 三方均不得自行提交Git、派发其它模型/子代理或扩大范围；Codex核查文件diff/输入SHA/真实命令退出码及实际页面和xlsx后提交。当前没有HF样板完成/工程通过/浏览器通过/用户阅读通过结论。旧Terminal15保留空闲历史，不复用旧上下文派单。
+- automation保持PAUSED，不自动恢复；提示需对应本次三个任务及新计划，禁止再发旧B4或重复M1。下次核查先通过cua_repl恢复文档并确认目标终端身份，只处理完成、公开错误或权限；持续处理中不因耗时重派。
+- 已有本地Git与模型/第三方克隆忽略规则。通用复用验证716+45项rc0仅证明基础可复用。用户已删除的CONTEXT.md和2026_10_17_workspace_structure_review.md保持原工作区删除状态，不恢复、不纳入本轮提交。下文全部为旧参考实现历史，其候选/测试/通过范围不继承为HF结果。
 
 ---
 

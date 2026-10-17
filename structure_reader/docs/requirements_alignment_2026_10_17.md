@@ -10,6 +10,8 @@
 
 ## 2. 源码、配置与分析边界
 
+输入约定：工作区scripts/download_hf_model.py已将不携带权重的HF模型资料下载到models/，其中根config.json提供模型超参数；模型实现源码来自用户从GitHub克隆到hflib/transformers的Hugging Face官方Transformers仓库。两类输入必须分开定位与核对，不因模型包也含Python文件就把它当作当前分析源码。
+
 - 模型源码采用Transformers仓库对应模型实现及理解其计算、缓存所必需的调用定义；配置采用目标模型HF config.json，并核对HF配置类的解释与默认值。缺失配置项使用默认值时明确标注来源，不假称其写在config.json中。
 - 固定所分析的源码版本与配置身份。既有模型仓库inference/model.py参考推理实现成果保留，其结构结论必须重新对照HF实现，不能直接当作HF图。
 - 只分析普通推理过程，包含prefill与decode，启用KVCache；不覆盖训练标签、训练损失、反向传播或额外调试输出的调用组合。
