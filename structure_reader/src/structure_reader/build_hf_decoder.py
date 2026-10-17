@@ -50,6 +50,7 @@ _TOOL_SOURCE_RELPATHS = (
     "src/structure_reader/extract/deepseek_v4_hf.py",
     "src/structure_reader/checks/deepseek_v4_hf_contracts.py",
     "src/structure_reader/render/decoder_page.py",
+    "src/structure_reader/render/diagram.py",
     "src/structure_reader/export/operator_workbook.py",
     "src/structure_reader/build_hf_decoder.py",
     "src/structure_reader/model_registry.py",

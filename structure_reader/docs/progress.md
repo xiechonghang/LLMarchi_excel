@@ -3,6 +3,10 @@
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
 
+- 最新展示工程结论（2026-10-18 04:34后）：原Terminal22 DeepSeek正常完成diagram_gate/round03并空闲，Codex已读取实际最小身份脚本/复用8正负例/报告及原始日志，复跑8项、固定5411候选展示检查和身份检查均rc0。96冻结/63旧候选保护与独立开始结束及当前复算一致；44图完整块/中心遮挡、间距/画布违规0，42模块缓存548实际有向边0缺失/多余/反向/未定位，2212联查/132marker闭合。2总览不在548端点全量统计，覆盖如实单列。HTML与b72e相同，JSON/xlsx/effective_config与29d70逐字节一致，7当前构建字节/12工具源及原始两build同新ID-reused已核。正式仅display_static_engineering=passed，[图示复验03与阅读入口](acceptance/hf_m1_diagram_gate_review03.md)，证据hf_m1/codex_diagram_gate_review03/及diagram_gate/round03/。
+- 新图候选5411cee8243a3a361d5d5991c5838d210e216d7d743fff0ba8e5ecfd4438d3be已供用户阅读：viewer/decoder.html，Excel内容保持原认可版本。本轮反馈范围已完成工程交付，三个OpenCode角色均完成停止等用户反馈，不再检查旧处理中状态/派“继续”或反复全套验证。browser_visual=blocked/not_verified、native_excel=not_verified、user_reading=pending；不代签视觉或M1最终阅读，不自动进M2/M3。下方round03处理中等为历史；15分钟规则无变化静默，仅新阅读反馈/实际错误或意外变更才继续对应角色。
+
+
 - 最新图示清理复核06（2026-10-18 04:19后）：原GLM修复04一次收尾正常完成，交付5411cee8243a3a361d5d5991c5838d210e216d7d743fff0ba8e5ecfd4438d3be并空闲。Codex按修前SHA内存反向还原确认只有删除残留_anchor_free调用及一行注释，AST无残留/未定义下划线调用。实际HTML与b72e逐字节相同，JSON/xlsx/effective_config与29d70不变，7当前构建字节/12工具源及63旧候选保护匹配；GLM原始29图+44页面rc0、两真实build同新ID第二次reused已核。Codex只复用既有参数化round02检查显式新候选rc0：完整块0遮挡、42模块缓存548实际有向边0错、链接/间距保持，不重复模型或Excel门禁。[复核06](acceptance/hf_m1_diagram_review06.md)，证据hf_m1/codex_diagram_review06/。
 - 已原可见Terminal22「LLMarchi HF M1 验证 DeepSeek」/huoshanai/deepseek-v4.1-flash同会话完整收到diagram_gate/round03/task.md并processing，任务SHAa04829d6561053eb71f2023164b06516b3ffa11a8ae6c92257a2fdb5858aaeb9，96文件freeze SHA097d74c530bb6ebaf694a3ff7fe6670448dce3219ddffa275c3750161421b778、63旧候选保护，含两轮共12份旧独立检查。派单codex_diagram_gate_dispatch03.json。仅复用既有参数化检查/正负例及最小新身份记录做展示最终复验，不复制框架/重审模型/跑旧门禁。预期本轮independent_result.md/result.json、原始日志和开始结束指纹。GLM/Qwen空闲，下方GLM收尾处理中已过时；15分钟ACTIVE规则跟踪本轮。静态工程/真实浏览器/用户阅读分开，M2/M3未启。
 

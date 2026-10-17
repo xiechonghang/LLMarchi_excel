@@ -520,8 +520,11 @@ class TestDeliverables(unittest.TestCase):
         self.assertIn("phase-decode", text)
         # 两阶段连续展示：decode 段落在 prefill 段落之后同页出现
         self.assertLess(text.index("phase-prefill"), text.index("phase-decode"))
+        # SVG 命名空间是标识符（从不联网拉取），与已豁免的论文链接一致
+        offline_text = text.replace("https://huggingface.co/papers", "") \
+                           .replace('xmlns="http://www.w3.org/2000/svg"', "")
         for external in ("http://", "https://", "cdn.jsdelivr", "unpkg.com", "cdnjs"):
-            self.assertNotIn(external, text.replace("https://huggingface.co/papers", ""),
+            self.assertNotIn(external, offline_text,
                              "离线页面不应引用外部资源")
         self.assertNotIn("（未定义！）", text, "算子引用不得悬空")
 

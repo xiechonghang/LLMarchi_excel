@@ -22,6 +22,16 @@ import html
 import json
 from pathlib import Path
 
+from structure_reader.render.diagram import (
+    build_cache_graphs,
+    build_module_graph,
+    build_overview_graph,
+    diagram_css,
+    legend_html,
+    module_groups,
+    render_svg,
+)
+
 __all__ = ["render_decoder_page", "DecoderPageError"]
 
 _PHASE_LABELS = {"prefill": "Prefill", "decode": "Decode"}
@@ -68,6 +78,7 @@ def render_decoder_page(reading_document: dict) -> bytes:
         moe=html.escape(str(scope.get("moe_type", ""))),
         path=html.escape(str(scope.get("analysis_path", ""))),
         scope_notes=_notes_list(scope.get("notes", [])),
+        diagram_css=diagram_css(),
     ))
     for phase in phases:
         parts.append(_render_phase(phase))
@@ -95,6 +106,36 @@ def _render_phase(phase: dict) -> str:
         f'<h2><span class="phase-badge {"badge-prefill" if pid == "prefill" else "badge-decode"}">'
         f'{html.escape(label)}</span> {html.escape(str(phase.get("title", "")))}</h2>'
     )
+
+    # ---- 结构图（展示层；边全部来自本文档 operators/tensors 真实引用）----
+    out.append('<div class="card"><h3>Decoder 结构总览（模块分支/残差/汇合 + 缓存通道）</h3>')
+    out.append('<div class="diagram-scroll">' +
+               render_svg(build_overview_graph(phase)) + "</div>")
+    out.append(legend_html())
+    out.append('<p class="dg-note">模块框可点击跳转到下方「模块详细连接图」；'
+               "聚合边可追溯到原始算子/张量（悬停查看张量清单）；"
+               "组内连接与权重引用在模块详图中呈现。</p></div>")
+
+    cache_graphs = build_cache_graphs(phase)
+    if cache_graphs:
+        out.append('<div class="card"><h3>缓存读写图（调用前历史 → 本次算子读写 → 调用后回写）</h3>')
+        for g in cache_graphs:
+            out.append(f'<h4 id="{html.escape(g["anchor"])}">{html.escape(g["title"])}</h4>')
+            out.append('<div class="diagram-scroll">' + render_svg(g) + "</div>")
+        out.append(legend_html())
+        out.append('<p class="dg-note">虚线菱形箭头=缓存读写；标注「仅 N_win&gt;0」的条件更新'
+                   "只在闭窗调用发生，无闭窗时状态保留（与算子卡片 note 一致）；"
+                   "「下游算子」chip 联查消费该读视图的原算子卡片。</p></div>")
+
+    module_graphs = [(g, build_module_graph(phase, g)) for g in module_groups(phase)]
+    out.append('<div class="card"><h3>模块详细连接图（节点=算子，边=真实张量引用）</h3>')
+    for g, graph in module_graphs:
+        out.append(f'<h4 id="mod-{html.escape(pid)}-{html.escape(g["id"])}">'
+                   f'{html.escape(g["title"])}</h4>')
+        out.append('<div class="diagram-scroll">' + render_svg(graph) + "</div>")
+    out.append(legend_html())
+    out.append('<p class="dg-note">节点点击联查本阶段算子卡片；边标签=张量名与符号 shape，'
+               "点击联查张量索引；权重为虚线引用边。专家模板仍只有一份（不复制 E 份）。</p></div>")
 
     # 缓存注记
     cache_notes = phase.get("cache_notes", [])
@@ -196,7 +237,8 @@ def _render_phase(phase: dict) -> str:
             for r in op.get("source_refs", [])
         ) or "—"
         out.append(
-            f'<div class="op {"op-blackbox" if blackbox else ""}">'
+            f'<div class="op {"op-blackbox" if blackbox else ""}" '
+            f'id="op-{html.escape(pid)}-{html.escape(str(op.get("id", "")))}">'
             f'<div class="op-head"><span class="op-no">{i + 1}</span>'
             f'<span class="mono op-id">{html.escape(str(op.get("id", "")))}</span>'
             f'<span class="op-name">{html.escape(str(op.get("name", "")))}</span>'
@@ -361,6 +403,8 @@ th {{ background: var(--code); font-weight: 600; }}
 .coverage h3 {{ color: #7a5c1e; }}
 ul {{ margin: 4px 0; padding-left: 22px; }}
 li {{ margin: 3px 0; }}
+h4 {{ font-size: 14px; margin: 16px 0 6px; color: var(--ink); }}
+{diagram_css}
 footer.page {{ max-width: 1180px; margin: 26px auto 0; color: var(--muted); font-size: 12.5px; }}
 @media (prefers-color-scheme: dark) {{
   :root {{
