@@ -1,5 +1,17 @@
 # progress：当前HF阅读样板与旧参考实现历史
 
+## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
+
+- 本条覆盖下方所有旧Claude/pi任务处理中、旧API Error续做及旧调度描述；历史保留，不再执行。用户明确无需检查旧会话，Codex没有再次检查/恢复旧开发会话。
+- 新Terminal25「LLMarchi HF M1 主干 GLM」：界面确认huoshanai/glm-5.3-flash、项目cwd；opencode_glm_handoff01.md完整收到并处理中。接续已保存M1修复，唯一主干开发者，排除Excel和独立验证文件，不从零重写。
+- 新Terminal26「LLMarchi HF M1 Excel Qwen」：界面确认huoshanai/qwen3.8-flash、项目cwd；opencode_qwen_handoff01.md完整收到并处理中。接管原pi范围；pi_axis_links_result01.md已保存，先核对有限自测，已正确则停止，不为并行增加功能。
+- 原Terminal22已更名「LLMarchi HF M1 验证 DeepSeek」，huoshanai/deepseek-v4.1-flash保持，收到分工更新，仅等待固定新候选；不追加旧任务。opencode_product_checks_result01.md已交付自报121项和旧d4a8e60b只读诊断（41error/26warning），这不等于新产品通过，仍待Codex复核。
+- 任务映射及互斥文件范围见计划v5§§9/10。目标仍是当前DeepSeek layer4的Attention/KVCache、MoE、mHC双阶段HTML和两表xlsx；不扩M2/M3、通用拒绝框架、全边变异或长度矩阵。旧d4a8e60b首版仍changes_required；没有新增正式验收通过结论。
+- 收到/模型/任务SHA记录：hf_m1/codex_opencode_migration01.json。原输入、冻结接口、历史候选/证据只读；progress仅Codex。每15分钟ACTIVE监控按新三角色执行，旧Claude/pi自动恢复规则失效。后续先Codex复核实际联合版本，再固定候选交DeepSeek正式验证，用户阅读另行确认。
+
+## 以下为迁移前状态与历史记录
+
+
 ## 当前执行状态：HF M1首版已复核，Claude定点修复01处理中（2026-10-17，Asia/Shanghai）
 
 - 用户指出pi/opencode长期空闲，Codex调整M1并行调度：正式验证仍等固定修复候选，但独立工作提前执行。原Terminal21（项目LLMarchi HF M1 Excel/qwen3.8-flash）已收到pi_axis_links01.md并Working，仅原Excel导出器/tests/hf范围补复合shape参数联查，冻结API不变；预期pi_axis_links_result01.md。原Terminal22（本项目/huoshanai deepseek-v4.1-flash）已收到opencode_product_checks01.md并进入处理中，仅tests/hf_independent开发实际产品检查、纠正准备期望，并只读诊断固定旧d4a8e60b候选，非正式通过；预期opencode_product_checks_result01.md。Claude仍原会话修复01，新增协调说明已排队，未中断（现场Waiting for API response自动重试，未停止，不额外续做）。三方文件不重叠，Codex统一验收和最终指纹收口；下方旧“pi/opencode空闲”等为历史。本次并行不扩M2/M3，不增加长度矩阵/全边变异或通用框架。

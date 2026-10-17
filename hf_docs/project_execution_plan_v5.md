@@ -1,6 +1,6 @@
 # 模型结构阅读实施计划v5：Transformers实现与双阶段阅读
 
-更新：2026-10-17。状态：需求已获用户确认，本计划替换旧V1→V2→V3执行主线；已完成代码复用分析；M1主干、独立Excel和独立测试准备已在三个新建VS Code可见终端正式派发，当前处理中。
+更新：2026-10-17。状态：需求范围不变；用户已停止旧任务，执行统一迁至VS Code可见OpenCode：GLM主干、Qwen独立Excel、DeepSeek独立验证。M1首版尚未认可，现接续已保存修复和成果，不从零开发。每15分钟检查保持ACTIVE。
 
 ## 1. 当前唯一执行入口
 
@@ -134,29 +134,21 @@ xlsx为必需交付。本机工程解释器已能发现openpyxl，但实现阶�
 
 ## 9. 协作、版本与接续
 
-- Codex维护需求/计划、划定范围、审查实际成果并记录验收。当前任务只完成重规划，不自行接手产品实现。
-- Claude承担HF事实提取、规则、检查与构建主干；按用户最新要求在VS Code为新阶段新增项目终端并启动claude新对话，不复用旧B4上下文。先核对项目，保留默认模型/账户与既有权限边界。
-- 用户已允许pi并行，最新指定qwen3.8flash（pi模型ID qwen3.8-flash），覆盖先前glm5.3flash。按最新要求新增VS Code项目终端启动pi新对话；以docs/hf_reading_contract_v1.md冻结接口，先独立承担operator_workbook.py及自身测试，不修改Claude文件。先确认真实模型，不静默替换。
-- opencode在新增VS Code项目终端启动新对话，保持huoshanai/deepseek-v4.1-flash；先做独立期望/测试准备（产品pending），再对新里程碑当前冻结版本发自包含验证任务；不重复旧阅读门禁或把旧参考V2通过当新HF通过。用户可先阅读明确标为候选的样板，工程独立结论随后补齐；二者不互相代签。
-- 不后台/隐藏调用模型，不读取凭据、其他项目或权重，不安装下载或导入执行参考模型。依赖确有缺失时记录实际阻断再处理。
-- 开发按工作包本地commit，提交注明范围。models/、hflib/继续Git忽略且只读；旧outputs/.work不自动入库或清理。
-- 新正式验收结论与可复验指纹保存在Git跟踪的docs/acceptance下，必要测试fixtures在tests内；生成大产物仍在outputs，记录其内容ID与文件指纹。不要再将唯一正式结论只存入“可丢弃”的.work。
-- 每包只需任务、公开结果、必要原始命令退出码；长期入口只有需求、本文、复用核查和progress最新状态。每里程碑形成一份简短验收记录，不增加逐微任务三件套。
-- 现有automation处于PAUSED，保持暂停，不在重规划时恢复。后续如恢复监控，先更新为新HF里程碑及实际派单断点；不沿用旧B4/V3指令。
+- Codex负责需求映射、派单、成果复核和最终验收，不接手产品实现。每个新任务必须说明对应需求、用户可见成果和完成标准；测试数量不代表需求进度，多个坏链接实例归并为同一缺陷。
+- 所有执行均为VS Code可见OpenCode会话：主干使用huoshanai/glm-5.3-flash，Excel使用huoshanai/qwen3.8-flash，独立验证使用huoshanai/deepseek-v4.1-flash。用户已停止旧Claude/pi任务，不再检查或恢复旧会话；旧自动续做Claude规则失效。
+- 主干拥有HF rules/extract/checks/build/CLI/HTML及自身HF测试；Excel仅拥有export/operator_workbook.py和tests/hf专属测试/fixtures；独立验证仅拥有tests/hf_independent。冻结阅读接口不变，避免同文件并发写入。
+- 所有agent对话仅通过cua_repl操作可见终端；先确认项目、角色标题和模型。禁止隐藏模型调用、工具子代理、切账户或扩大权限。不读凭据/其他项目，不安装下载，不加载权重或导入执行HF/参考模型。
+- 每包完成后停止等Codex复核。独立验证准备完成不能称正式产品通过；正式验证须固定实际主干与Excel联合版本和候选指纹。工程通过和用户阅读分别记录。
+- 本地commit只收录已审查范围；models/、hflib/保持忽略和只读，历史候选/inputs/.work证据不覆写或清理。正式结论放Git跟踪的docs/acceptance，候选大产物仍在outputs。
+- 唯一长期入口为需求、本文、复用核查和progress顶部。不要增加逐微任务文档体系。用户已授权每15分钟检查；只在完成、新错误、实际阻断或需输入时通知，正常处理中保持静默。用户停止/暂停优先。
 
 ## 10. 当前下一步
 
-### M1并行调度补充（2026-10-17，用户要求加强并行）
+### M1迁至OpenCode（2026-10-17，用户明确调整分工）
 
-正式验收需要固定候选，但验证脚本和独立期望可以与开发同时推进。独立工作完成后应检查M1当前待办中是否还有不重叠的有效任务，不能笼统等主干全部完成；也不为了维持忙碌而新增M2/M3范围。
+- Terminal25「LLMarchi HF M1 主干 GLM」已确认glm-5.3-flash和项目路径，收到opencode_glm_handoff01.md并处理中。接续原claude_fix01尚未完成的真实数据流、shape、KVCache和HTML参数联查修复，保留已保存改动。对应需求§§3/4/5/6/7；来源/失败诊断仅支持当前样板可信性，不建设通用坏图平台。
+- Terminal26「LLMarchi HF M1 Excel Qwen」已确认qwen3.8-flash和项目路径，收到opencode_qwen_handoff01.md并处理中。原pi Excel与复合shape参数联查成果已保存；仅核对、有限自测和必要收尾，正确则报告可集成并停止，不重复开发。对应需求§§3/5/6。
+- Terminal22「LLMarchi HF M1 验证 DeepSeek」保持deepseek-v4.1-flash，已收到角色更新。已有独立产品检查交付（opencode_product_checks_result01.md，自报121项与固定旧候选诊断）待Codex复核；不是正式M1通过。现不追加任务，待固定新候选再正式验证。对应需求§§2/7的静态正确性及HTML/xlsx同源交付检查。
+- Codex复核两开发者成果与独立检查质量，核对真实HF来源、数据连接、shape、缓存含义和页面联查。收口时覆盖实际Excel导出器的指纹，统一稳定候选并验证两次复用，再派DeepSeek正式验收。缺陷只回对应开发者；不能因迁移增加功能或恢复旧B4/全边变异/长度矩阵。
 
-- Claude：继续HF M1修复01，拥有HF rules/extract/checks/build/CLI/HTML及自己的HF测试。修正真实数据流与shape是当前关键路径；不编辑Excel导出器或独立验证目录。
-- pi（qwen3.8-flash）：已完成Excel模块与同名参数修复，新增并行任务是复合shape组成参数的本表联查，例如Nh×Dh、B×T、W-1；只改原export/operator_workbook.py与tests/hf测试/fixtures，冻结公开API和两表布局。不解释HF模型事实、不建立通用求值器、不等Claude数据改好。
-- opencode（huoshanai/deepseek-v4.1-flash）：已完成独立源码准备，新增并行任务是将源码期望接到reading_document/HTML/xlsx产品检查；只改tests/hf_independent。使用手工小fixture自测，对显式固定的已拒绝首版候选做只读诊断，提前纠正自身CSA/HCA分支等准备错误。该工作不签新产品正式通过，不追随开发中的工作树反复构建。
-- Codex：维护冻结接口和互斥文件范围、派单并确认收到、复核各自产物；有实质新缺陷时汇总交回对应开发者，避免重复派单。三方完成后核对当前文件指纹，统一构建一次稳定候选、两次复用，再执行对应候选的正式独立验证。
-
-同一工作树允许不同文件并行，但最终身份必须覆盖实际使用的Excel导出器版本。若构建期间独立文件仍变化，不能声称同版稳定复用；各自公开实际版本，由Codex在收口时重新核对。任务明细和收到状态保存在.work/coordination/hf_m1，长期实际断点以progress顶部为准。
-
-实施计划与复用分析已经形成。下一开发工作包是“HF decoder样板双阶段闭环”，从真实HF注册/有效配置和layer_idx=4开始，交付当次生成的HTML与两表xlsx；不是再补旧B4，也不是先迁移全部历史工程。
-
-本文中所有新模块、命令扩展、样板页面、Excel和Skill均仍待实施；当前没有新HF产品通过结论。
+编号可能改变，以标题、项目和模型共同确认。派单记录为.work/coordination/hf_m1/codex_opencode_migration01.json；历史派单只读。当前仍处M1阅读样板，M2真实配置变体须等M1用户阅读确认，M3整网至logits/Skill随后推进。
