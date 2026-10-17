@@ -2,6 +2,9 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 最新图示复核05（2026-10-18 04:04后）：GLM修复04正常交付b72e2027d2e202512e8332f835de4d8e15c15b3ac7c48c87a4ed5054eb605626并空闲。Codex29图+44页面rc0，复用旧round02只读checker显式检查新候选rc0；44图整块/中心遮挡0、548实际边方向0错、间距/画布保持，当前7字节/12工具源/旧输入候选保护同源，JSON/xlsx与29d70不变，GLM两真实build rc0同ID/reused。[复核05](acceptance/hf_m1_diagram_review05.md)，证据hf_m1/codex_diagram_review05/。
+- 暂不派新独立门禁：代码:853仍残留已删_anchor_free调用（1调用/0定义），当前样板短路未触发，不虚称当前build报错；只回原GLM完成修复04同一任务的一行清理，codex_diagram_fix04_followup01.md，预期opencode_glm_diagram_fix_result04_followup01.md及新身份/logs。保留已正确整块图，禁止恢复anchor-only降级/重写布局或新增功能。下方修复04处理中已过时，旧b72e及全部候选历史只读；原可见Terminal25已完整收到该一次续做并processing，任务SHAe3dab7bc31a8201b7e8f2de3411bdc2685bd56a3ae4bd570719a5b1a2f06b4ee，派单codex_diagram_fix04_followup_dispatch01.json；DeepSeek/Qwen空闲，15分钟ACTIVE规则同步。新展示独立/真实视觉/用户阅读仍未通过，M2/M3未启。
+
 - 最新展示复验02复核（2026-10-18 03:49后）：DeepSeek正常交付changes_required并空闲。Codex已读新6检查/正负例与原始日志，复跑8项rc0、固定50f候选诊断rc1，90冻结/49保护及开始结束/新增SHA吻合。实际42模块缓存图548边方向完整核对0错，旧32中心遮挡已关闭。但宽文字整块未完成：anchor-only回退仍让关键“追加N_win_i可为0”尾部估算47.58px被i_scorer盖住（去掉检测余量），不能用0中心代替全文。274/208仅范围度量不拆任务。[复核记录](acceptance/hf_m1_diagram_gate_review02.md)，证据hf_m1/codex_diagram_gate_review02/。
 - 同一HTML布局问题回原GLM定点修复04：opencode_glm_diagram_fix04.md，修前codex_diagram_gate_review02/before_fix04.json。取消anchor-only成功降级，允许必要有限列/行留白或清晰引线外置，保全文/节点标题及真实边对应；不改模型/Excel/独立checker、不重写图框架。允许必要边几何变化但真实端点方向保持，不再以旧path字节相同约束阻碍修复。下方round02处理中已过时，旧50f及全部输入候选/gate历史只读。原可见Terminal25已完整收到修复04并processing，任务SHA054dc3022922f31d7ca6ed5f71952090713a2f1b5fd9572c48c24b14d91ac990，派单codex_diagram_fix_dispatch04.json；DeepSeek/Qwen空闲，15分钟ACTIVE规则同步。新展示/真实视觉/用户阅读未通过，M2/M3未启。
 
