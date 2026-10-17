@@ -1,0 +1,32 @@
+# Downloaded model inputs and third-party source checkouts
+/models/
+/hflib/
+
+# Local agent/editor configuration
+/.claude/
+/.codex/
+/.vscode/
+/.idea/
+
+# Generated deliveries and temporary execution records
+/structure_reader/outputs/
+/structure_reader/.work/
+
+# Python environments and build/cache files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+/structure_reader/build/
+/structure_reader/dist/
+
+# Local environment secrets and OS files
+.env
+.env.*
+!.env.example
+!.env.sample
+.DS_Store
