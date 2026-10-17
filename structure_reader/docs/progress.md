@@ -2,6 +2,9 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 最新展示独立复核（2026-10-18 03:19后）：DeepSeek正常完成diagram_gate/round01并空闲，结论changes_required。Codex已读6独立文件/正负例与原始日志，复跑10项rc0及固定32af候选检查rc1；84冻结/42旧候选保护、开始结束、新6测试SHA吻合。图张量多重集/缓存角色与下游/条件、同源链接/marker/多行间距保持，但实际32个边标签锚点在节点矩形内，edge→label→node绘制使不透明节点盖字，Codex XML直接复现。属一个布局缺陷，350估算包围盒仅风险。[独立复核记录](acceptance/hf_m1_diagram_gate_review01.md)，证据hf_m1/codex_diagram_gate_review01/。独立checker未从SVG端点全面验方向，报告无方向错覆盖过强；后续只有限补核端点，不扩全边变异。
+- 只回原GLM图示定点修复03：opencode_glm_diagram_fix03.md，修前codex_diagram_gate_review01/before_fix03.json。保留所有已核模型/Excel/缓存/多行布局成果，只修标签与节点遮挡，不以调绘制层级反过来盖节点文字，不清冗余/重写图框架。旧32af及全部输入候选/gate历史只读；下方DeepSeek处理中已过时。原可见Terminal25同GLM模型已完整收到修复03并processing，任务SHAdcede68341d18266b4b39d196695976462262a49dd9de159b50d17366c6c8128，派单codex_diagram_fix_dispatch03.json。DeepSeek/Qwen空闲；15分钟ACTIVE规则同步。新展示工程/真实视觉/用户阅读仍未通过，M2/M3未启。
+
 - 最新图示复核03（2026-10-18 03:04后）：GLM收尾02正常交付32af1e923cca4f8c1d535786e4b612d4ccfdfe736c47aeb3671230f77f2d5733并空闲。Codex实际25图+44页面rc0、两真实build rc0同新ID/reused，44SVG完整多行块最小间距13px/0标签越界；原缓存/实际引用/去重/marker保持，2212联查闭合。7现行字节及12工具源匹配，JSON/xlsx与29d70一致，输入/旧候选保护不变。[复核03](acceptance/hf_m1_diagram_review03.md)，证据hf_m1/codex_diagram_review03/。已知修复范围认可，浏览器视觉/用户阅读仍未通过；GLM所谓既有节点交叠“已认可”不成立，由独立展示复核有限核实具体风险，不据此扩平台。
 - 已在原可见Terminal22「LLMarchi HF M1 验证 DeepSeek」/huoshanai/deepseek-v4.1-flash同项目会话正式收到diagram_gate/round01/task.md并processing，任务SHA00a65b752c8f2d8e12e9b317206c21f765dc697afb35161e25d4fa64413049ec，84文件freeze SHAee8d5c0aff7133f04eb4e2d06dad3e0cd0a7a27ec4d45c6e335fb2405564e8ca，保护42旧候选文件。派单codex_diagram_gate_dispatch01.json。仅展示图真实连接/缓存角色/条件/链接/有限布局与新身份独立验证，不重跑旧模型/Excel门禁或坏输入/长度矩阵。预期本轮independent_result.md/result.json/原始日志/开始结束指纹；GLM/Qwen等待，无重复派单，M2/M3未启。下方收尾02处理中已过时；15分钟ACTIVE检查现在跟踪此独立验证。
 
