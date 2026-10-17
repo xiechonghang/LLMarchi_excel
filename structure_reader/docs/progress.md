@@ -2,6 +2,8 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 最新核验（2026-10-17 19:35后）：Qwen Terminal26正常交付opencode_qwen_result01.md并空闲，本轮零产品/测试改动。Codex复跑57项/2.489秒/原始rc0，独立两合成fixture回读及参数顺序反转49检查rc0，输出SHA与既有两基线一致；复合shape联查、同名消歧与本表引用在Excel模块范围认可可集成，[正式记录](acceptance/hf_m1_excel_review02.md)，细证据hf_m1/codex_qwen_review01/result.json。真实HF集成、原生Excel重算/视觉、用户阅读仍未通过。GLM Terminal25仍glm-5.3-flash正常处理中，无重派或中断；DeepSeek仅等待固定新候选。下方Qwen处理中为派发时历史，不再重派收尾。
+
 - 本条覆盖下方所有旧Claude/pi任务处理中、旧API Error续做及旧调度描述；历史保留，不再执行。用户明确无需检查旧会话，Codex没有再次检查/恢复旧开发会话。
 - 新Terminal25「LLMarchi HF M1 主干 GLM」：界面确认huoshanai/glm-5.3-flash、项目cwd；opencode_glm_handoff01.md完整收到并处理中。接续已保存M1修复，唯一主干开发者，排除Excel和独立验证文件，不从零重写。
 - 新Terminal26「LLMarchi HF M1 Excel Qwen」：界面确认huoshanai/qwen3.8-flash、项目cwd；opencode_qwen_handoff01.md完整收到并处理中。接管原pi范围；pi_axis_links_result01.md已保存，先核对有限自测，已正确则停止，不为并行增加功能。

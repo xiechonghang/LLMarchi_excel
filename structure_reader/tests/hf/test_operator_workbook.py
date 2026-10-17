@@ -37,6 +37,7 @@ from structure_reader.export.operator_workbook import (  # noqa: E402
 from openpyxl import load_workbook  # noqa: E402
 
 FIXTURE = HERE / "fixtures" / "workbook_synthetic_document.json"
+COMPOSITE_FIXTURE = HERE / "fixtures" / "workbook_composite_axes_document.json"
 
 PARAM_HEADER = "参数id"
 OP_HEADER = "黑盒标记"
@@ -52,6 +53,11 @@ N_COLS = 14
 
 def load_doc() -> dict:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+
+def load_composite_doc() -> dict:
+    """复合轴专用小型自包含数据（只测接口内的轴联查，不代表真实模型维度）。"""
+    return json.loads(COMPOSITE_FIXTURE.read_text(encoding="utf-8"))
 
 
 def sheet_of(payload: bytes, name: str):
@@ -684,6 +690,183 @@ class TestDuplicateSymbolBinding(unittest.TestCase):
             for r in op_data_rows(ws):
                 for _c, row_ref in formula_targets(cell(ws, r, "axis_lookup")):
                     self.assertIn(int(row_ref), prow, (name, r))
+
+
+class TestCompositeAxisLinks(unittest.TestCase):
+    """pi_axis_links01：复合 shape 的组成参数本表联查（不求值、不建通用求值器）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.doc = load_composite_doc()
+        cls.payload = export_operator_workbook(cls.doc)
+        cls.wb = load_workbook(io.BytesIO(cls.payload))
+
+    def ws(self, name):
+        return self.wb[name]
+
+    def prow(self, sheet, pid):
+        ws = self.ws(sheet)
+        return next(r for r in param_data_rows(ws) if param_cell(ws, r, "id") == pid)
+
+    def orow(self, sheet, oid):
+        ws = self.ws(sheet)
+        return next(r for r in op_data_rows(ws) if cell(ws, r, "op_id") == oid)
+
+    def axis(self, sheet, oid):
+        return cell(self.ws(sheet), self.orow(sheet, oid), "axis_lookup")
+
+    def targets(self, formula):
+        return set(formula_targets(formula))
+
+    def test_composite_axis_links_each_component(self):
+        """B×T / W-1：轴内每个已声明符号各自链本表参数行，轴文本仍原样保留。"""
+        text = cell(self.ws("Prefill"), self.orow("Prefill", "op_rope_view"), "inputs")
+        self.assertIn("window_mask[B, W-1]", text)                    # 原符号保留
+        self.assertIn("q_states[B×T, Nh, Dh]",
+                      cell(self.ws("Prefill"), self.orow("Prefill", "op_rope_view"), "outputs"))
+        axis = self.axis("Prefill", "op_rope_view")
+        self.assertTrue(axis.startswith("="), axis)
+        self.assertIn('"B×T组成："', axis)
+        self.assertIn('"W-1组成："', axis)
+        for pid in ("p_batch", "p_seq", "p_nh", "p_dh", "p_window"):
+            self.assertIn(("D", str(self.prow("Prefill", pid))), self.targets(axis))
+        # 直接符号不贴标签（原有形式）
+        self.assertNotIn('"Nh组成："', axis)
+
+    def test_direct_symbol_output_unchanged(self):
+        """全部为直接符号的旧文档：不出现组成标签，公式列仍只引用符号/值单元格。"""
+        base = load_doc()
+        ws = load_workbook(io.BytesIO(export_operator_workbook(base)))["Prefill"]
+        texts = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
+        self.assertFalse([t for t in texts if "组成：" in t])
+        for r in op_data_rows(ws):
+            for col, _row in self.targets(cell(ws, r, "axis_lookup")):
+                self.assertIn(col, ("B", "D"))
+
+    def test_symbol_tokens_are_never_split(self):
+        """Nh 不得拆成 N+h，H 不得当 Nh 的子串；2Dh 只识别系数与 Dh。"""
+        axis = self.axis("Prefill", "op_head_no_split")
+        targets = self.targets(axis)
+        self.assertIn(("D", str(self.prow("Prefill", "p_nh"))), targets)
+        self.assertIn(("D", str(self.prow("Prefill", "p_dh"))), targets)
+        for pid in ("p_n", "p_hidden"):        # N=61 / H=4096 都是本表已声明符号，但本行轴里没有它们
+            self.assertNotIn(("D", str(self.prow("Prefill", pid))), targets)
+            self.assertNotIn(("B", str(self.prow("Prefill", pid))), targets)
+        gather = self.axis("Prefill", "op_group_gather")
+        self.assertIn('"2Dh组成："', gather)                      # 系数写法被识别，不是不支持
+        self.assertNotIn("原样保留", gather)
+        self.assertIn(("D", str(self.prow("Prefill", "p_dh"))), self.targets(gather))
+        # (2+Nhc)×Nhc：括号/重复符号只联查一次 Nhc，常数 2 不算缺失
+        self.assertEqual(gather.count(f"$D${self.prow('Prefill', 'p_nhc')}"), 1)
+        self.assertNotIn("未命中", gather)
+
+    def test_constants_and_function_names_are_not_missing_symbols(self):
+        """min/max 函数名与常数不得被当成缺失参数。"""
+        axis = self.axis("Prefill", "op_topk_route")
+        self.assertIn('"min(Ki,N_comp)组成："', axis)
+        self.assertIn(("D", str(self.prow("Prefill", "p_ki"))), self.targets(axis))
+        self.assertIn(("D", str(self.prow("Prefill", "p_ncmp"))), self.targets(axis))
+        self.assertNotIn("未命中", axis)
+        missed_part = [p for p in axis.split(";") if "未命中" in p]
+        self.assertEqual(missed_part, [])
+        for token in ("min", "2", "1"):            # 函数名与常数不得被当成缺失符号
+            self.assertNotIn(f"同名符号：{token}", axis)
+
+    def test_composite_same_symbol_disambiguated_by_explicit_ref(self):
+        """复合轴 E×Nh：同名候选靠本行显式 parameter_refs 消歧（取 p_experts，不是 p_gate）。"""
+        axis = self.axis("Prefill", "op_expert")
+        targets = self.targets(axis)
+        self.assertIn('"E×Nh组成："', axis)
+        self.assertIn(("D", str(self.prow("Prefill", "p_experts"))), targets)   # 256
+        self.assertNotIn(("D", str(self.prow("Prefill", "p_gate"))), targets)    # 64 不得被误绑
+        self.assertNotIn("歧义", axis)
+        # 直接轴 E 同样消歧到 p_gate（op_topk_route 引用了 p_gate）
+        route = self.targets(self.axis("Prefill", "op_topk_route"))
+        self.assertIn(("D", str(self.prow("Prefill", "p_gate"))), route)
+        self.assertNotIn(("D", str(self.prow("Prefill", "p_experts"))), route)
+
+    def test_composite_ambiguous_component_not_guessed(self):
+        """E×Dh 且无显式引用：E 只报歧义（附候选id与本表行号），Dh 照旧联查。"""
+        axis = self.axis("Prefill", "op_orphan_view")
+        targets = self.targets(axis)
+        self.assertIn("符号存在歧义", axis)
+        self.assertIn(f"p_gate（第{self.prow('Prefill', 'p_gate')}行）", axis)
+        self.assertIn(f"p_experts（第{self.prow('Prefill', 'p_experts')}行）", axis)
+        self.assertIn('"E×Dh组成："', axis)
+        for pid in ("p_gate", "p_experts"):
+            self.assertNotIn(("D", str(self.prow("Prefill", pid))), targets)
+            self.assertNotIn(("B", str(self.prow("Prefill", pid))), targets)
+        self.assertIn(("D", str(self.prow("Prefill", "p_dh"))), targets)   # 不受歧义影响
+
+    def test_partial_unknown_component_reported_honestly(self):
+        """Nh×Dx：Nh 联查，Dx 列入未命中（不补 0、不拉无关引用当组成）。"""
+        axis = self.axis("Prefill", "op_partial_unknown")
+        self.assertIn('"Nh×Dx组成："', axis)
+        self.assertIn("未命中本表参数区同名符号：Dx", axis)
+        self.assertIn(("D", str(self.prow("Prefill", "p_nh"))), self.targets(axis))
+        self.assertNotIn("=0", axis)
+        refs = cell(self.ws("Prefill"), self.orow("Prefill", "op_partial_unknown"), "param_ids")
+        self.assertNotIn("p_lkv", refs)     # 无关参数不得伪装成该轴组成
+
+    def test_unsupported_expressions_kept_verbatim(self):
+        """⌈T/2⌉ / B T / sqrt(H) / Nh××Dh：原样保留并提示，不挖符号、不求值。"""
+        axis = self.axis("Prefill", "op_opaque_shapes")
+        self.assertIn("原样保留（超出轻量表达式支持，未求值）", axis)
+        for raw in ("⌈T/2⌉", "B T", "sqrt(H)", "Nh××Dh"):
+            self.assertIn(raw, axis, raw)
+            self.assertIn(raw, cell(self.ws("Prefill"), self.orow("Prefill", "op_opaque_shapes"), "inputs"))
+        targets = self.targets(axis)
+        # 未支持的写法不得贡献任何绑定：T(p_seq) 与 H(p_hidden) 不得出现
+        for pid in ("p_seq", "p_hidden"):
+            self.assertNotIn(("D", str(self.prow("Prefill", pid))), targets)
+        # 本行里合法的部分（输出轴 Nh/Dh）仍照旧联查
+        self.assertIn(("D", str(self.prow("Prefill", "p_nh"))), targets)
+        # 下划线符号与 ÷ 常数写法可联查
+        kv = self.axis("Prefill", "op_kv_layers")
+        self.assertIn('"L_kv+N_comp组成："', kv)
+        self.assertIn('"Dh÷8组成："', kv)
+        self.assertIn(("D", str(self.prow("Prefill", "p_lkv"))), self.targets(kv))
+        self.assertNotIn("未命中", kv)
+
+    def test_composite_links_are_phase_scoped(self):
+        """其他 phase 隔离：同名 E 在 decode 只是未声明，不得借用 prefill 参数行或报歧义。"""
+        axis = self.axis("Decode", "op_d_step")
+        self.assertIn('"B×T组成："', axis)
+        self.assertIn('"B×Nh组成："', axis)
+        self.assertIn("未命中本表参数区同名符号：Dh, E", axis)
+        self.assertNotIn("歧义", axis)
+        prow = param_data_rows(self.ws("Decode"))
+        for _c, row_ref in self.targets(axis):
+            self.assertIn(int(row_ref), prow)              # 只引用本表行
+        self.assertIn(("D", str(self.prow("Decode", "p_nh"))), self.targets(axis))   # decode 自己的 Nh
+        # 同名符号在不同表各取本表值（行号是每表局部的，不能跨表比较）
+        self.assertEqual(param_cell(self.ws("Decode"), self.prow("Decode", "p_nh"), "value"), "16")
+        self.assertEqual(param_cell(self.ws("Prefill"), self.prow("Prefill", "p_nh"), "value"), "32")
+
+    def test_composite_document_bytes_stable_and_input_untouched(self):
+        snapshot = json.dumps(self.doc, sort_keys=True, ensure_ascii=False)
+        again = export_operator_workbook(load_composite_doc())
+        self.assertEqual(again, self.payload)
+
+        def reversed_keys(obj):
+            if isinstance(obj, dict):
+                return {k: reversed_keys(v) for k, v in reversed(list(obj.items()))}
+            if isinstance(obj, list):
+                return [reversed_keys(v) for v in obj]
+            return obj
+
+        self.assertEqual(export_operator_workbook(reversed_keys(load_composite_doc())), self.payload)
+        time.sleep(1.05)
+        self.assertEqual(export_operator_workbook(load_composite_doc()), self.payload)
+        self.assertEqual(json.dumps(self.doc, sort_keys=True, ensure_ascii=False), snapshot)
+        import xml.etree.ElementTree as ET
+
+        with zipfile.ZipFile(io.BytesIO(self.payload)) as zf:
+            self.assertIsNone(zf.testzip())
+            for part in zf.namelist():
+                if part.endswith(".xml") or part.endswith(".rels"):
+                    ET.fromstring(zf.read(part))
+        self.assertEqual(self.wb.sheetnames, ["Prefill", "Decode"])
 
 
 def _phase(name: str) -> dict:

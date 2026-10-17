@@ -646,13 +646,89 @@ def _is_symbolic_axis(axis) -> bool:
     return isinstance(axis, str) and not re.fullmatch(r"-?\d+", axis.strip())
 
 
-def _axis_symbols(operator: dict, tensor_index: dict) -> list:
-    symbols: list = []
+# 轻量复合轴识别：只求“哪些已声明参数参进了这条轴”，不求值、不建通用求值器。
+_AXIS_BAD_CHAR_RE = re.compile(r"[^A-Za-z0-9_. ×*/÷+(),-]")
+_AXIS_RUN_RE = re.compile(
+    r"\d+(?:\.\d+)?[A-Za-z_][A-Za-z0-9_]*"   # 无乘号系数写法：2Dh、16H（当一个 token 读）
+    r"|[A-Za-z_][A-Za-z0-9_]*"
+    r"|\d+(?:\.\d+)?")                         # 纯常数
+_AXIS_COEF_RE = re.compile(r"^(\d+(?:\.\d+)?)([A-Za-z_][A-Za-z0-9_]*)$")
+_AXIS_GAP_CHARS = set("×*/÷+-(), \t")
+_AXIS_FUNCTIONS = ("min", "max")
+
+
+def _classify_axis(axis: str, defined_symbols: set) -> tuple:
+    """把一条符号轴分为直接符号 / 可轻量分解的复合轴 / 不认识的写法。
+
+    返回 (kind, 组成符号列表, 原轴文本)：
+    - "simple"：轴文本本身就是一个已声明符号（输出与原行为逐字一致）。
+    - "composite"：由常数、×/*、÷/、+/-、括号、min/max 与已声明符号组成；
+      已声明符号按 token 边界精确匹配（绝不把 Nh 拆成 N+h，也绝不把 H 当作 Nh 的子串），
+      “常数系数+符号”（2Dh/2Es）当一个 token 识别为系数与已声明符号。
+      未声明的标识符列入未命中；函数名与常数不算缺失参数。
+    - "opaque"：写法超出支持范围（如 ⌈T/2⌉、sqrt(...)、A B 并列、××）→原样保留并提示。
+    """
+    text = axis.strip()
+    if not text:
+        return "opaque", [], axis
+    if text in defined_symbols:
+        return "simple", [text], axis
+    if _AXIS_BAD_CHAR_RE.search(text) or text.count("(") != text.count(")"):
+        return "opaque", [], axis
+
+    matches = list(_AXIS_RUN_RE.finditer(text))
+    if not matches:
+        return "opaque", [], axis
+
+    components: list = []
+    unknown: list = []
+    position = 0
+    seen_operand = False
+    for match in matches:
+        gap = text[position:match.start()]
+        position = match.end()
+        run = match.group(0)
+        if any(ch not in _AXIS_GAP_CHARS for ch in gap):        # 如 "2.h"、“config.h”
+            return "opaque", [], axis
+        operators = [ch for ch in gap if ch in "×*/÷+-"]
+        if seen_operand and not gap.strip():                    # 操作数并列（"B T"）：不猜乘号
+            return "opaque", [], axis
+        if len(operators) > 1:                                  # 运算符相邻（"××"、"+-"）
+            return "opaque", [], axis
+        seen_operand = True
+        after = text[position:].lstrip()
+        if run in defined_symbols:
+            if run not in components:
+                components.append(run)
+            continue
+        if re.fullmatch(r"\d+(?:\.\d+)?", run):                 # 常数：不是缺失参数
+            continue
+        if run in _AXIS_FUNCTIONS and after.startswith("("):    # 函数名：不是缺失参数
+            continue
+        coef = _AXIS_COEF_RE.match(run)
+        if coef and coef.group(2) in defined_symbols:           # 2Dh → 系数 2 + 已声明符号 Dh
+            if coef.group(2) not in components:
+                components.append(coef.group(2))
+            continue
+        if after.startswith("("):                               # 不认识的函数调用
+            return "opaque", [], axis
+        if run not in unknown:
+            unknown.append(run)
+    return "composite", components + unknown, axis
+
+
+def _axis_units(operator: dict, tensor_index: dict, defined_symbols: set) -> list:
+    """按轴出现顺序生成待联查单元；每条单元记住自己的原文与组成符号。"""
+    units: list = []
+    seen: list = []
     for tid in (*operator["inputs"], *operator["outputs"], *operator["weights"]):
         for axis in tensor_index[tid]["shape"]:
-            if _is_symbolic_axis(axis) and axis not in symbols:
-                symbols.append(axis)
-    return symbols
+            if not _is_symbolic_axis(axis) or axis in seen:
+                continue
+            seen.append(axis)
+            kind, symbols, _text = _classify_axis(axis, defined_symbols)
+            units.append({"axis": axis, "kind": kind, "symbols": symbols, "rows": []})
+    return units
 
 
 def _operator_param_ids(operator: dict, tensor_index: dict) -> list:
@@ -691,8 +767,8 @@ def _bind_axis_symbols(symbols: list, rows_by_symbol: dict, id_of_row: dict,
     return bound, ambiguous, missed
 
 
-def _unbound_note(ambiguous: list, missed: list) -> str | None:
-    """歧义/未命中的中文陈达：列出相关参数id与本表行号，供人工定位。"""
+def _unbound_note(ambiguous: list, missed: list, unsupported: list | None = None) -> str | None:
+    """歧义/未命中/不支持写法的中文陈述：给出相关参数id与本表行号，或原轴文本。"""
     parts = []
     if ambiguous:
         bodies = [f"{symbol}（本表同名候选："
@@ -701,7 +777,70 @@ def _unbound_note(ambiguous: list, missed: list) -> str | None:
         parts.append("符号存在歧义，未取配置值：" + "；".join(bodies))
     if missed:
         parts.append("未命中本表参数区同名符号：" + ", ".join(missed))
+    if unsupported:
+        parts.append("原样保留（超出轻量表达式支持，未求值）：" + "、".join(unsupported))
     return "；".join(parts) if parts else None
+
+
+def _bind_axis_units(units: list, rows_by_symbol: dict, id_of_row: dict, explicit_ids: set):
+    """逐轴单元绑定；同名候选仍由本行显式 parameter_refs 分辨，分不出就不取。
+
+    返回 (歧义符号集, 未命中符号集, 不支持的原轴文本)；绑定行写回各单元的 "rows"。
+    复合轴只用该轴自己出现的 token，不把无关 parameter_refs 伪装成轴组成符号。
+    """
+    ambiguous_all: list = []
+    missed_all: list = []
+    for unit in units:
+        if unit["kind"] == "opaque":
+            continue
+        bound, ambiguous, missed = _bind_axis_symbols(
+            unit["symbols"], rows_by_symbol, id_of_row, explicit_ids)
+        unit["rows"] = _dedup(bound)
+        for symbol, pairs in ambiguous:
+            if symbol not in [s for s, _ in ambiguous_all]:
+                ambiguous_all.append((symbol, pairs))
+        for symbol in missed:
+            if symbol not in missed_all:
+                missed_all.append(symbol)
+    unsupported = [u["axis"] for u in units if u["kind"] == "opaque"]
+    return ambiguous_all, missed_all, unsupported
+
+
+def _axis_lookup_formula(units: list, note: str | None = None,
+                         labeled: bool = True) -> str | None:
+    """「维度符号→本表配置值」列公式：每个组成符号单独链接本表参数行单元格。
+
+    直接符号保持原有简洁形式；复合轴加“原轴文本组成：”字面量前缀，只列组成参数，
+    不对轴求值。无绑定或公式过长时返回 None（调用方回退为文本）。
+    """
+    pieces: list = []
+    shown = 0
+    overflow = 0
+    for unit in units:
+        rows = unit["rows"]
+        if not rows:
+            continue
+        if shown + len(rows) > _MAX_INLINE_REFS:
+            overflow += len(rows)
+            continue
+        parts = [f'$B${r}&"="&$D${r}' for r in rows]
+        body = '&"; "&'.join(parts)
+        if labeled and unit["kind"] == "composite":
+            # 复合轴：先写字面量标签“原轴文本组成：”，再直接接上该轴的组成符号。
+            pieces.append(_xl_quote(f"{unit['axis']}组成：") + "&" + body)
+        else:
+            pieces.append(body)
+        shown += len(rows)
+    if not pieces:
+        return None
+    formula = "=" + ' & "; " & '.join(pieces)
+    if overflow:
+        formula += f' & "; " & {_xl_quote(f"…另有{overflow}项，完整清单见「参数引用」列")}'
+    if note:
+        formula += f' & "; " & {_xl_quote(note)}'
+    if len(formula) > _FORMULA_LIMIT:
+        return None
+    return formula
 
 
 def _render_operators(ws, start_row: int, phase: dict, row_of_id: dict,
@@ -742,13 +881,15 @@ def _render_operators(ws, start_row: int, phase: dict, row_of_id: dict,
         ref_ids = _operator_param_ids(op, tensor_index)
         ref_rows = [row_of_id[pid] for pid in ref_ids]
 
-        symbols = _axis_symbols(op, tensor_index)
-        bound_rows, ambiguous, missed = _bind_axis_symbols(
-            symbols, rows_by_symbol, id_of_row, set(ref_ids))
-        note = _unbound_note(ambiguous, missed)
-        formula = _lookup_formula(bound_rows, suffix_text=note)
-        if formula is None and bound_rows:
-            formula = _lookup_formula(bound_rows)  # 附注导致超长时至少保留已命中的联查
+        units = _axis_units(op, tensor_index, set(rows_by_symbol))
+        ambiguous, missed, unsupported = _bind_axis_units(
+            units, rows_by_symbol, id_of_row, set(ref_ids))
+        note = _unbound_note(ambiguous, missed, unsupported)
+        formula = _axis_lookup_formula(units, note)
+        if formula is None:
+            formula = _axis_lookup_formula(units)          # 附注过长：只保留联查
+        if formula is None:
+            formula = _axis_lookup_formula(units, labeled=False)  # 标签过长：回到无标签形式
         if formula:
             _formula(ws, row, 9, formula, fill=row_fill)
         else:
