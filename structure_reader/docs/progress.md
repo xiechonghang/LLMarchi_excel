@@ -2,6 +2,9 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 最新图示复核（2026-10-18 02:20后）：GLM正常交付opencode_glm_diagram_result01.md/候选b96e697842a3142823ad0e9214ff50767b635265a0f727088728eeae0e2deae2并空闲。Codex实际图15+HF44rc0，JSON/xlsx与29d70逐字节一致、旧候选未变；但图示changes_required：3缓存族下游查成producer导致所有consumer chip为空；kv_full本次读视图误标调用前状态；缓存图漏新输入/算子间activation连接；模块各72组内部边重复及平行标签/节点文字重叠，marker多图ID重复。[复核01](acceptance/hf_m1_diagram_review01.md)，证据hf_m1/codex_diagram_review01/result.json、facts.json。不是模型分析/Excel回归，不扩其它需求。
+- 已原可见Terminal25同GLM会话正式收到opencode_glm_diagram_fix01.md并processing，任务SHA72daa1694539e53dfc02b03b45f557d1e98852b63f4cd8a059ea8d1227a8eb3b；派单codex_diagram_fix_dispatch01.json，修前codex_diagram_review01/before_fix01.json。仅修同一图示任务的缓存映射/连线与去重标签布局，保留总览/分组/已核JSON/Excel，旧b96e及全部候选历史只读。预期opencode_glm_diagram_fix_result01.md、新候选、logs/opencode_glm_diagram_fix01_*。DeepSeek暂不派新展示复核，Qwen空闲。下方图示01处理中已过时，勿重发；用户图示阅读/新展示工程未通过，M2/M3未启。
+
 - 用户新阅读反馈（2026-10-18）：已检查HTML/Excel，认可算子粒度及Excel内容；希望缓存说明与数据流增加直观结构图，展示算子真实连接而非仅顺序。冗余以后再沟通，本轮不删改。记录[阅读反馈01](acceptance/hf_m1_reading_feedback01.md)。旧候选静态工程通过仍仅属旧身份，M1阅读待图示改进后再确认，M2/M3不启动。
 - 已在原可见Terminal25「LLMarchi HF M1 主干 GLM」/huoshanai/glm-5.3-flash同会话下发hf_m1/opencode_glm_diagram01.md，界面完整收到且processing，任务SHAbd55df2126114a4dc62cb61f979f412e3f9291cb3e111a54ead9bea2300df99b，派单codex_diagram_dispatch01.json，修前diagram_before01.json。仅HTML每阶段Decoder总览+模块算子连接图/缓存调用前-本次读-回写；边从同一JSON输入输出引用生成，保留粒度/Excel/已核事实。预期opencode_glm_diagram_result01.md、新内容寻址候选和logs/opencode_glm_diagram01_*。JSON/xlsx应与29d70旧候选逐字节一致，旧输入/候选/gate历史只读；无新依赖/通用图平台/长度矩阵。Qwen保持空闲，DeepSeek等新固定展示候选再按改动复核，不为忙碌派任务。15分钟检查现在跟踪本任务，覆盖下方三角色全部等待状态。
 

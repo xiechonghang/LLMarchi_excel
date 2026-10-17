@@ -1,0 +1,11 @@
+# M1连接图展示复核01
+
+2026-10-18，Codex。候选b96e697842a3142823ad0e9214ff50767b635265a0f727088728eeae0e2deae2，结论changes_required，尚未交DeepSeek独立复核。
+
+确认图示仅改展示层及必要helper指纹、HF离线检查SVG命名空间豁免；JSON与xlsx和已认可29d70基线逐字节一致、旧候选保护未变。Codex实际新图15项、受影响HF44项rc0，但自测未覆盖以下真实缺陷，不能当作用户需求已完成。
+
+缓存图build_cache_graphs用producer查下游而不是consumer，导致两阶段所有3缓存族下游chip均为空，实际应有kv_concat、c_block_bias、i_scorer/i_topk等。kv_full由本次cache_update产生，却因无_post后缀被标成调用前状态。缓存图还只画缓存kind的输入输出，漏本次新输入及缓存算子之间的activation引用，未形成用户要求的完整读写连接。
+
+模块内部同一张量边在input和output循环各生成一次，两阶段各72组重复边；SVG按同一坐标绘制，使路径/标签叠加。多张量同起终点也共用一处标签中点；节点三行标题第3基线38与副标题42过近。属于直接可证的SVG几何问题，尚未声称真实浏览器视觉验证。应有限修正去重、标签分离与节点容纳，不扩大通用布局框架。
+
+细证据hf_m1/codex_diagram_review01/result.json、facts.json和原始测试日志。修复仅同一GLM渲染/图测试范围，保留已正确分析和Excel/候选历史。M1用户图示阅读待确认，M2/M3未启。
