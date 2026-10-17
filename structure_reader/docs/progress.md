@@ -2,6 +2,9 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 用户新阅读反馈（2026-10-18）：已检查HTML/Excel，认可算子粒度及Excel内容；希望缓存说明与数据流增加直观结构图，展示算子真实连接而非仅顺序。冗余以后再沟通，本轮不删改。记录[阅读反馈01](acceptance/hf_m1_reading_feedback01.md)。旧候选静态工程通过仍仅属旧身份，M1阅读待图示改进后再确认，M2/M3不启动。
+- 已在原可见Terminal25「LLMarchi HF M1 主干 GLM」/huoshanai/glm-5.3-flash同会话下发hf_m1/opencode_glm_diagram01.md，界面完整收到且processing，任务SHAbd55df2126114a4dc62cb61f979f412e3f9291cb3e111a54ead9bea2300df99b，派单codex_diagram_dispatch01.json，修前diagram_before01.json。仅HTML每阶段Decoder总览+模块算子连接图/缓存调用前-本次读-回写；边从同一JSON输入输出引用生成，保留粒度/Excel/已核事实。预期opencode_glm_diagram_result01.md、新内容寻址候选和logs/opencode_glm_diagram01_*。JSON/xlsx应与29d70旧候选逐字节一致，旧输入/候选/gate历史只读；无新依赖/通用图平台/长度矩阵。Qwen保持空闲，DeepSeek等新固定展示候选再按改动复核，不为忙碌派任务。15分钟检查现在跟踪本任务，覆盖下方三角色全部等待状态。
+
 - 最新结论（2026-10-17 22:00前后）：原可见Terminal22 DeepSeek正常完成正式M1 round01并空闲。Codex已读实际独立检查/正负例/源码及日志，复跑24项与固定候选检查rc0；75冻结+21旧候选文件再复算一致、新增7测试SHA一致。独立两真实build同29d70d15971b524bc41cf334fa3768ab851186f68005549628ea638dd51abbd4/reused、7现行字节同源、三隔离CLI rc1/0HTML。4manual逐源码核实、18warning属复合算子中间声明/byproduct，未把启发式未定位直接当通过。正式裁定仅engineering_gate=passed；browser_visual=blocked/not_verified、native_excel=not_verified、user_reading=not_passed。[正式记录与阅读入口](acceptance/hf_m1_engineering_gate01.md)，独立证据hf_m1/gate/round01/，Codex复核hf_m1/codex_gate_review01/。
 - 当前等待用户阅读固定HTML和两表xlsx，GLM/Qwen/DeepSeek均已停止等反馈，不重派开发/正式验证、不进入M2/M3。页面冗余中间声明是否影响理解留给阅读反馈，不据此扩展开发；历史候选/输入/门禁不动。下方正式验证处理中状态已过时。15分钟检查只核对新反馈/意外变更/公开阻断，无变化静默，不反复通知已通过结论。
 
