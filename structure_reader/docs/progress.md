@@ -2,6 +2,9 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 最新主干复核（2026-10-17 20:55后）：GLM正常交付opencode_glm_result01.md/候选31c183e7ec26ca083c945e4764bc3abd29b11714ad77db9f92760d6527a2d02e并空闲。Codex实际38+57+121项rc0，两次build-hf rc0同ID/reused，7份字节与当前build同源、manifest产物及11tool_sources SHA匹配；原producer/前向/自环与HTML断链关闭，wrong_av及原源码/未知模型三个CLI隔离路径rc1/0HTML。仍changes_required：overlap缺M轴/闭窗条件、i_scores漏新增条目长度、MoE加法前缺view且单专家必要矩阵乘/向量运算/索引链未分行、默认position_ids批次维矛盾。[正式复核](acceptance/hf_m1_review02.md)，细证据hf_m1/codex_review02/result.json及source_shape_findings.json；不扩通用门禁/长度矩阵。
+- 已在原可见Terminal25同一GLM会话正式提交opencode_glm_fix01.md并确认完整收到/processing，huoshanai/glm-5.3-flash保持；任务SHA7cb0aabc477776704bc14699a29d3ce759ab303e299c580ed0b62a27599c1117，派单codex_glm_fix_dispatch01.json，修前57项产品/fixture基线codex_review02/before_glm_fix01_products.json。预期opencode_glm_fix_result01.md与新候选、logs/opencode_glm_fix01_*。只改4组实际源码/阅读事实，不改Excel/独立测试/progress/旧输入候选历史。Qwen已认可模块保持空闲，DeepSeek等固定候选，未派正式M1独立验收，用户阅读仍未通过。下方GLM接管01处理中为历史，勿重发。
+
 - 最新核验（2026-10-17 19:35后）：Qwen Terminal26正常交付opencode_qwen_result01.md并空闲，本轮零产品/测试改动。Codex复跑57项/2.489秒/原始rc0，独立两合成fixture回读及参数顺序反转49检查rc0，输出SHA与既有两基线一致；复合shape联查、同名消歧与本表引用在Excel模块范围认可可集成，[正式记录](acceptance/hf_m1_excel_review02.md)，细证据hf_m1/codex_qwen_review01/result.json。真实HF集成、原生Excel重算/视觉、用户阅读仍未通过。GLM Terminal25仍glm-5.3-flash正常处理中，无重派或中断；DeepSeek仅等待固定新候选。下方Qwen处理中为派发时历史，不再重派收尾。
 
 - 本条覆盖下方所有旧Claude/pi任务处理中、旧API Error续做及旧调度描述；历史保留，不再执行。用户明确无需检查旧会话，Codex没有再次检查/恢复旧开发会话。
