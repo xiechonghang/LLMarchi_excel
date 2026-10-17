@@ -2,6 +2,9 @@
 
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
+- 最新展示复验02复核（2026-10-18 03:49后）：DeepSeek正常交付changes_required并空闲。Codex已读新6检查/正负例与原始日志，复跑8项rc0、固定50f候选诊断rc1，90冻结/49保护及开始结束/新增SHA吻合。实际42模块缓存图548边方向完整核对0错，旧32中心遮挡已关闭。但宽文字整块未完成：anchor-only回退仍让关键“追加N_win_i可为0”尾部估算47.58px被i_scorer盖住（去掉检测余量），不能用0中心代替全文。274/208仅范围度量不拆任务。[复核记录](acceptance/hf_m1_diagram_gate_review02.md)，证据hf_m1/codex_diagram_gate_review02/。
+- 同一HTML布局问题回原GLM定点修复04：opencode_glm_diagram_fix04.md，修前codex_diagram_gate_review02/before_fix04.json。取消anchor-only成功降级，允许必要有限列/行留白或清晰引线外置，保全文/节点标题及真实边对应；不改模型/Excel/独立checker、不重写图框架。允许必要边几何变化但真实端点方向保持，不再以旧path字节相同约束阻碍修复。下方round02处理中已过时，旧50f及全部输入候选/gate历史只读。原可见Terminal25已完整收到修复04并processing，任务SHA054dc3022922f31d7ca6ed5f71952090713a2f1b5fd9572c48c24b14d91ac990，派单codex_diagram_fix_dispatch04.json；DeepSeek/Qwen空闲，15分钟ACTIVE规则同步。新展示/真实视觉/用户阅读未通过，M2/M3未启。
+
 - 最新图示交接复核04（2026-10-18 03:34后）：GLM修复03正常交付50f10185f4db393169578ac6ce0f82782ccd34064b8bec9430837a2b99884680并空闲。Codex28图+44页面rc0，两真实build rc0同新ID/reused，当前7产物/12工具源同源，JSON/xlsx与29d70相同，旧输入候选保护不变。真实边路径与32af完全相同、44图0锚点入节点/间距与画布保持；但宽标签block_free失败回退anchor_free，全文尾部仍有风险，“追加N_win_i可为0”等不能以中心0直接视为可读。282估算相交不逐条当确定错误，所谓既有尾部已认可没有依据。[交接复核04](acceptance/hf_m1_diagram_review04.md)，证据hf_m1/codex_diagram_review04/。新展示尚未通过。
 - 已原可见Terminal22「LLMarchi HF M1 验证 DeepSeek」/huoshanai/deepseek-v4.1-flash完整收到diagram_gate/round02/task.md并processing，任务SHAdc0e2993748b9f6bf3566db885b347712c01a424ee25f2981f629d13b46b78f1；90文件freeze SHAa72e73afb9d60117aed09a43e8a2706c39057d7fde35e54ea8d37740ecdb0e72，保护49旧候选文件（含旧独立6检查）。只按展示变化复验宽标签完整性/旧32例/有限SVG真实端点方向与受影响保障，不重跑旧模型/Excel门禁。派单codex_diagram_gate_dispatch02.json，预期本轮independent_result.md/result.json/原始日志/开始结束指纹。GLM/Qwen等待，修复03处理中等下方历史已过时；15分钟ACTIVE规则跟踪本轮复验。用户阅读/M2/M3未通过/未启。
 
