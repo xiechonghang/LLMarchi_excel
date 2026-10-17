@@ -2,6 +2,8 @@
 
 ## 当前执行状态：HF M1已派发（2026-10-17 15:38，Asia/Shanghai）
 
+- 2026-10-17T17:08:40.635848+08:00 Codex定时复核：Terminal20 Claude出现API Error响应中断并done5:03PM；已核对实际保存的HF注册/规则/提取器初稿，在原可见会话发送一次从已保存进度继续的指令，确认完整收到且Smooshing spinner恢复。记录hf_m1/codex_claude_api_resume01.json；未clear/切模型账户权限/重发整单。pi修复01正常交付且空闲；Codex47项/1.412秒原始rc0，原43项保留，原duplicate_symbol_input实际回放I24正确取p_hidden、I25明确歧义且不取冲突值、K25标明两参数id，参数顺序反转仍正确，正常合成xlsx SHA f961ecff…与初版逐字节一致。Excel导出器修复范围认可，证据hf_m1/codex_pi_fix_review01/result.json；真实HF文档集成/原生Excel/用户阅读仍pending。opencode准备已认可保持空闲，不重派正式门禁；等待Claude真实M1交付。
+
 - 2026-10-17T16:55:13.690146+08:00 Codex首次定时核查：可见Terminal20 Claude仍spinner正常处理，无API Error，未干预。Terminal21 pi/Qwen已交付导出器；Codex实际43项/1.303秒rc0，合成xlsx回读SHA f961ecff13637af297370fc7da24b653b9793aa325a908daac21d937fba86644与原报告一致，两表经Artifact Tool导入渲染（非原生Excel/用户验收）。但同名H符号导致I24静默取p_topk=8、K24正确指p_hidden=4096的真实联查矛盾已复现；pi_fix01.md（SHA d6c2d161be2376bc7dcc8ae53cc42d32b701da34954dd008af546b6fc61b3445）已在原可见Terminal21派发并确认Working，仅修原Excel范围，不重写框架。预期pi_fix_result01.md，勿重发。Terminal22 opencode准备正常完成/空闲，独立源码期望98项/0.054秒rc0，输入身份与有效配置/关键结构检查通过，仅认可“验证准备”，不代表产品门禁。证据.work/coordination/hf_m1/codex_parallel_review01/result.json及原始命令/回读/两原始复现。真实HF图/HTML/xlsx未交付，不派正式产品验证、不进M2。automation保持ACTIVE/15分钟及Claude API Error原会话自动续做。
 
 - 用户已明确要求“从现在开始启动，15min检查一次”：现有automation已成功更新为ACTIVE，RRULE间隔15分钟，保留Claude API Error原会话自动续做规则及无变化静默规则。本条覆盖此前暂停记录，不新建重复自动化。
