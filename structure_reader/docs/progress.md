@@ -3,6 +3,10 @@
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
 
+- 最新ONNX式展示复核02（2026-10-19）：原GLM正常完成收尾01、候选31ac27674ab4d4c4285b9b4cbb24d03f86e6b3766b4c3ae202ec26df16bc2ad4并空闲。Codex41图+44页面rc0、当前7交付/13工具源同源、原始两build同ID-reused、三数据不变与77旧候选保护已核。324同href端口0悬空，628边标签可见全文/50条件同见，四具名别名修正与dark箭头marker图例6.55/8.03/8.75静态对比保持。但框内5个长源码名×2阶段仍被_wrap三行硬上限截断（expert_gu停self.gate_up_proj[expe；另expert_slice/i_topk/两residual_mix）；属于同一用户名称完整可见遗漏，changes_required，不拆10任务。[复核02](acceptance/hf_m1_onnx_view_review02.md)，证据hf_m1/codex_onnx_view_review02/。端口最近同href口径不宣称全方向独立通过；browser/user阅读仍未通过。
+- 已原可见Terminal25「LLMarchi HF M1 主干 GLM」/huoshanai/glm-5.3-flash同会话完整收到opencode_glm_onnx_view_fix02.md并processing，任务SHA6784474c32924ba8d7bfbc0178c69ea7b5d32ba64eb452f211bd407fe2cc2f00，派单codex_onnx_view_fix_dispatch02.json。只补节点源码名称换行/高度与有限实际SVG回放，保已正确端口/边标签/类型/别名/配色，不重写布局/模型/Excel或独立checker。修前codex_onnx_view_review02/before_fix02.json，84旧候选文件保护含31ac。预期opencode_glm_onnx_view_fix_result02.md、新candidate及logs/opencode_glm_onnx_view_fix02_*。DeepSeek/Qwen等待，暂不派新独立复验；下方收尾01处理中已过时，勿重发旧单。15分钟ACTIVE规则跟踪本单，M1用户未通过，M2/M3未启。
+
+
 - 最新ONNX式展示复核01（2026-10-18）：原GLM正常交付e8505d9e261b00624d15b7c8fbbdfa066b9d574bc43e4992b9e5addfca3ebda3并空闲。Codex36图+44页面rc0、7当前构建字节/13工具源/原始两build同ID-reused及三数据不变、旧70候选保护已核。框字静态对比14.49/副字7.39、tensor矩形改端口和源码命名方向保留。但changes_required仍属用户原两项：圆点坐标更新后路径anchor沿用172px矩形（q_weight圆心26,119 vs箭头起点188,131.5），324端口不接；cond or label遮掉50边名/shape、12长标签可见维度截断；expert_gu_out/current与i_scores/scores名shape错配及q_a/down[e]伪源码参数；dark flow固定深蓝对card仅1.87。数量只量同类遗漏，不拆新任务。[复核01](acceptance/hf_m1_onnx_view_review01.md)，证据hf_m1/codex_onnx_view_review01/。
 - 已原可见Terminal25同GLM会话完整收到opencode_glm_onnx_view_fix01.md并processing，任务SHAee83bc8fb000b5279814f4e6678a7c9e1e9d718e26b42311ffd20b72ef92a35a，派单codex_onnx_view_fix_dispatch01.json；修前codex_onnx_view_review01/before_fix01.json，77候选文件保护含e850。只补真实端口路径、可见源码名+size+条件、真实别名与dark箭头配色，保已改善图义/框字/粒度/JSON/Excel，不建新框架/重审模型/改独立checker或旧候选。预期opencode_glm_onnx_view_fix_result01.md、新candidate与logs/opencode_glm_onnx_view_fix01_*。DeepSeek/Qwen等待，尚未派新独立复验；下方原单处理中过时，不重发。15分钟规则跟踪本定点收尾，M1用户未通过/M2M3未启。
 
