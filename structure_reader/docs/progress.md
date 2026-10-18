@@ -3,6 +3,10 @@
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
 
+- 最新ONNX式展示复核01（2026-10-18）：原GLM正常交付e8505d9e261b00624d15b7c8fbbdfa066b9d574bc43e4992b9e5addfca3ebda3并空闲。Codex36图+44页面rc0、7当前构建字节/13工具源/原始两build同ID-reused及三数据不变、旧70候选保护已核。框字静态对比14.49/副字7.39、tensor矩形改端口和源码命名方向保留。但changes_required仍属用户原两项：圆点坐标更新后路径anchor沿用172px矩形（q_weight圆心26,119 vs箭头起点188,131.5），324端口不接；cond or label遮掉50边名/shape、12长标签可见维度截断；expert_gu_out/current与i_scores/scores名shape错配及q_a/down[e]伪源码参数；dark flow固定深蓝对card仅1.87。数量只量同类遗漏，不拆新任务。[复核01](acceptance/hf_m1_onnx_view_review01.md)，证据hf_m1/codex_onnx_view_review01/。
+- 已原可见Terminal25同GLM会话完整收到opencode_glm_onnx_view_fix01.md并processing，任务SHAee83bc8fb000b5279814f4e6678a7c9e1e9d718e26b42311ffd20b72ef92a35a，派单codex_onnx_view_fix_dispatch01.json；修前codex_onnx_view_review01/before_fix01.json，77候选文件保护含e850。只补真实端口路径、可见源码名+size+条件、真实别名与dark箭头配色，保已改善图义/框字/粒度/JSON/Excel，不建新框架/重审模型/改独立checker或旧候选。预期opencode_glm_onnx_view_fix_result01.md、新candidate与logs/opencode_glm_onnx_view_fix01_*。DeepSeek/Qwen等待，尚未派新独立复验；下方原单处理中过时，不重发。15分钟规则跟踪本定点收尾，M1用户未通过/M2M3未启。
+
+
 - 用户新阅读反馈02（2026-10-18）：已实际发现框内字色不可读、tensor传输与计算框难区分；明确要求类似ONNX计算图：框=源码算子名+计算类型，箭头=tensor/权重源码名+shape，开头hidden_states可明确输入；不再把中间张量/缓存状态画成计算框。先前算子粒度/Excel认可和冗余暂缓仍有效，M1新图阅读未通过。当前CSS浅底配dark页面浅ink存在冲突；当前虚拟tensor矩形属于本次要改的图义，不是新增模型功能。[反馈02](acceptance/hf_m1_reading_feedback02.md)。需求确认/计划v5已同步这两项展示要求。
 - 已原可见Terminal25「LLMarchi HF M1 主干 GLM」/huoshanai/glm-5.3-flash完整收到opencode_glm_onnx_view01.md并processing，任务SHAfa199f1ec5f039f39f63dafce6be341ceaf1e1ab6934ff07d443a8f170847f36，派单codex_onnx_view_dispatch01.json，基线onnx_view_before01.json SHAfd63c10132197da8e82ba4d48079df37c540e03f1ead8b8c9a596c0e28b683c2，保护70旧候选文件（含5411）。仅render/必要小命名helper/受影响图页测试及工具指纹；源码展示别名要有真实依据，不能把提取id冒称源码变量；真实边/shape仍只来自既有JSON，JSON/effective_config/xlsx不变。预期opencode_glm_onnx_view_result01.md、新candidate与logs/opencode_glm_onnx_view01_*。不重发旧修复/重写框架或ONNX导出，不改模型/Excel/独立checker。DeepSeek待新候选后有限复验，旧rect端口解析假设不能直接否决新图；Qwen空闲。下方三方全部等待/用户无反馈已过时；15分钟规则跟踪新任务，M2/M3未启。
 
