@@ -3,6 +3,10 @@
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
 
+- 最新ONNX式展示收尾复核03（2026-10-19）：原GLM正常完成收尾02并空闲，候选c97d0b5c72a2d6da2936bb74edbb150e9ee29320a89c977ff9a528f277227231。Codex内存反向还原_node_lines/_wrap后命中修前SHA，只有节点换行产品和两实际SVG回放测试改变；150框名/当前类型与628边标签完整，5名两阶段截断已消除，324同href端口0悬空、50条件同见和配色保持。实际43图+44页面rc0，7交付/13工具源同源，原始两build同ID/reused，三数据与5411/29d70相同、84旧候选保护未变。[复核03](acceptance/hf_m1_onnx_view_review03.md)，证据hf_m1/codex_onnx_view_review03/。只认可本次收尾，非新展示最终独立通过，browser/user阅读未通过。
+- 已原可见Terminal22「LLMarchi HF M1 验证 DeepSeek」/huoshanai/deepseek-v4.1-flash完整收到onnx_view_gate/round01/task.md并processing，任务SHA5bcdd45060aa5fd5cd0b462110906f26129a70cba9746bb8b0c40ccc5a5bba96，新98文件freeze SHA4de7e69d3ca469757c493eebcd23674cc38831c4142188f9696fb9c2052bc96d、84旧候选保护，含新命名helper/用户反馈和旧两轮12独立检查。派单codex_onnx_view_gate_dispatch01.json。只复验本轮ONNX式展示，复用旧JSON独立期望、必要最小circle/IO/compute实际端点适配与正负例（最多两个新检查文件），保方向保障/名称shape条件/静态配色，旧rect checker不能硬套。仅新证据可写，不重审字节相同模型/Excel、不跑旧门禁/全仓。GLM/Qwen空闲，下方GLM收尾02处理中已过时；禁止重发本复验或旧修复单。15分钟ACTIVE规则跟踪，M1用户未通过，M2/M3未启。
+
+
 - 最新ONNX式展示复核02（2026-10-19）：原GLM正常完成收尾01、候选31ac27674ab4d4c4285b9b4cbb24d03f86e6b3766b4c3ae202ec26df16bc2ad4并空闲。Codex41图+44页面rc0、当前7交付/13工具源同源、原始两build同ID-reused、三数据不变与77旧候选保护已核。324同href端口0悬空，628边标签可见全文/50条件同见，四具名别名修正与dark箭头marker图例6.55/8.03/8.75静态对比保持。但框内5个长源码名×2阶段仍被_wrap三行硬上限截断（expert_gu停self.gate_up_proj[expe；另expert_slice/i_topk/两residual_mix）；属于同一用户名称完整可见遗漏，changes_required，不拆10任务。[复核02](acceptance/hf_m1_onnx_view_review02.md)，证据hf_m1/codex_onnx_view_review02/。端口最近同href口径不宣称全方向独立通过；browser/user阅读仍未通过。
 - 已原可见Terminal25「LLMarchi HF M1 主干 GLM」/huoshanai/glm-5.3-flash同会话完整收到opencode_glm_onnx_view_fix02.md并processing，任务SHA6784474c32924ba8d7bfbc0178c69ea7b5d32ba64eb452f211bd407fe2cc2f00，派单codex_onnx_view_fix_dispatch02.json。只补节点源码名称换行/高度与有限实际SVG回放，保已正确端口/边标签/类型/别名/配色，不重写布局/模型/Excel或独立checker。修前codex_onnx_view_review02/before_fix02.json，84旧候选文件保护含31ac。预期opencode_glm_onnx_view_fix_result02.md、新candidate及logs/opencode_glm_onnx_view_fix02_*。DeepSeek/Qwen等待，暂不派新独立复验；下方收尾01处理中已过时，勿重发旧单。15分钟ACTIVE规则跟踪本单，M1用户未通过，M2/M3未启。
 
