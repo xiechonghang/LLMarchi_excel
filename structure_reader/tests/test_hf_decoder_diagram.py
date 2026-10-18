@@ -25,11 +25,16 @@ from structure_reader.render.diagram import (  # noqa: E402
     build_cache_graphs,
     build_module_graph,
     build_overview_graph,
+    compute_type_label,
     diagram_css,
     legend_html,
     module_groups,
     render_svg,
 )
+
+
+def dg_build_module(phase, group):
+    return build_module_graph(phase, group)
 
 
 def _op(oid, inputs, outputs, weights=()):
@@ -651,6 +656,325 @@ class TestRealDocumentClosure(unittest.TestCase):
             conds = [e["cond"] for g in graphs.values() for e in g["edges"] if e["cond"]]
             self.assertTrue(any(c == "仅 N_win>0" for c in conds))
             self.assertTrue(any(c == "仅 N_win_i>0" for c in conds))
+
+
+class TestOnnxViewSemantics(unittest.TestCase):
+    """用户反馈02：ONNX 式阅读语义 + 图示固定对比配色。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from structure_reader.extract.deepseek_v4_hf import build_reading_document
+        from structure_reader.render import diagram_source_labels as dsl
+
+        cls.doc = build_reading_document(REPO_ROOT)
+        cls.dsl = dsl
+
+    def test_source_label_covers_all_real_ids(self):
+        """每个真实算子/张量 id 都有源码命名映射（内部 id 不冒充源码变量的保障）。"""
+        for phase in self.doc["phases"]:
+            for op in phase["operators"]:
+                self.assertIsNotNone(
+                    self.dsl.op_source_label(op),
+                    f"{phase['id']}: 算子 {op['id']} 缺源码名映射")
+            for t in phase["tensors"]:
+                self.assertIsNotNone(
+                    self.dsl.tensor_source_label(t["id"]),
+                    f"{phase['id']}: 张量 {t['id']} 缺源码名映射")
+
+    def test_op_box_shows_source_name_and_compute_type(self):
+        """计算框 = 源码调用名（主行）+ 实际计算类型（副行，复合如实列出）。"""
+        phase = self.doc["phases"][0]
+        ops = {o["id"]: o for o in phase["operators"]}
+        for oid, expect_name, expect_type in (
+                ("q_a_proj", "self.q_a_proj(hidden_states)", "Linear"),
+                ("qk_scaled", "matmul(query, key_states.transpose(2,3))*scaling", "MatMul"),
+                ("sink_softmax", "softmax(cat([attn_weights, sinks]) - max)", "Softmax"),
+        ):
+            op = ops[oid]
+            self.assertEqual(self.dsl.op_source_label(op), expect_name)
+            self.assertIn(expect_type, self.dsl.compute_type_label(op))
+        # 复合算子类型如实列出（q_b_proj：Linear + View + Transpose）
+        self.assertEqual(self.dsl.compute_type_label(ops["q_b_proj"]),
+                         "Linear + View + Transpose")
+        g = dg_build_module(phase, next(
+            g for g in module_groups(phase) if g["id"] == "attn_q"))
+        svg = render_svg(g)
+        self.assertIn("self.q_a_proj(hidde", svg)
+
+    def test_tensor_arrows_use_source_names_not_internal_ids(self):
+        """箭头标签 = 源码变量/表达式名 + shape（如 q_a_normed→q_residual）。"""
+        phase = self.doc["phases"][0]
+        tensors = {t["id"]: t for t in phase["tensors"]}
+        g = dg_build_module(phase, next(
+            g for g in module_groups(phase) if g["id"] == "attn_q"))
+        labels = [e["label"] for e in g["edges"]]
+        self.assertIn("q_residual [B,T,Rq]",
+                      [l for l in labels if "q_residual" in l][0])
+        for e in g["edges"]:
+            self.assertNotEqual(e["label"], e["title"],
+                                f"边标签不得直接使用内部语义 id {e['title']}")
+
+    def test_non_compute_nodes_are_ports_not_boxes(self):
+        """tensor/权重/缓存状态不再是计算框矩形：渲染为端口圆点；
+        初始 hidden_states 为显式输入标识；总览模块框为导航（虚线）。"""
+        phase = self.doc["phases"][0]
+        groups = {g["id"]: g for g in module_groups(phase)}
+        mhc = render_svg(dg_build_module(phase, groups["mhc_attn"]))
+        self.assertIn('dg-port io', mhc, "hidden_states 输入标识缺失")
+        self.assertIn('hidden_states（层输入）', mhc)
+        self.assertIn('dg-dot', mhc, "tensor/权重端点应为端口圆点")
+        self.assertNotIn('dg-node boundary', mhc, "tensor 不得再画计算样式矩形")
+        self.assertNotIn('dg-node weight', mhc)
+        # 边界输入圆点（position_ids）在 Attention-Q 图中
+        q = render_svg(dg_build_module(phase, groups["attn_q"]))
+        self.assertIn('dg-dot boundary', q)
+        ov = render_svg(build_overview_graph(phase))
+        self.assertIn('dg-node nav', ov)
+        self.assertIn('dg-node navlane', ov)
+        self.assertIn('导航', ov)
+
+    def test_cache_arrow_labels_carry_source_name_and_role(self):
+        """缓存状态为端口圆点，箭头标签含时序角色 + 源码名 + shape。"""
+        from structure_reader.render.diagram import build_cache_graphs
+
+        graphs = {g["id"]: g for g in build_cache_graphs(self.doc["phases"][0])}
+        labels = [e["label"] for g in graphs.values() for e in g["edges"]]
+        self.assertTrue(any("读调用前状态" in l and "self.keys" in l for l in labels),
+                        "主 KV 读边应含角色与源码名")
+        self.assertTrue(any("写调用后状态" in l and "self.keys" in l for l in labels))
+        self.assertTrue(any("本次读视图→参与计算" in l and "compressed_kv" in l
+                            for l in labels), "下游边应含缓存状态源码名")
+
+    def test_diagram_fixed_contrast_palette(self):
+        """浅/暗主题可读：框内文字固定深色（不依赖 --ink），边标签成对主题配色
+        且光晕不再使用 var(--card)。"""
+        css = diagram_css()
+        self.assertIn(".dg-node .nlabel { fill: #1f2933;", css)
+        self.assertIn(".dg-node .nsub { fill: #4a5568;", css)
+        self.assertNotIn(".dg-node text { fill: var(--ink)", css)
+        self.assertIn(".elabel { font-size: 10px; fill: #33404d;", css)
+        self.assertNotIn("stroke: var(--card)", css)
+        self.assertIn("@media (prefers-color-scheme: dark)", css)
+        self.assertIn(".elabel { fill: #d9e2ea; stroke: rgba(20,23,27,0.92); }", css)
+        self.assertIn(".elabel-cond { fill: #ff9a9a; }", css)
+
+    def test_compute_type_composite_and_fallback(self):
+        """复合类型如实列出；未收录 token 原样保留（不伪造 ONNX 名）。"""
+        op = {"op": "linear+view+transpose"}
+        self.assertEqual(compute_type_label(op), "Linear + View + Transpose")
+        op2 = {"op": "customop+linear"}
+        self.assertEqual(compute_type_label(op2), "customop + Linear")
+
+
+class TestOnnxViewFix01(unittest.TestCase):
+    """反馈02收尾回放：端口真接、条件+名称/shape 同见、源码真名、暗主题箭头对比。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from structure_reader.extract.deepseek_v4_hf import build_reading_document
+        from structure_reader.render.decoder_page import render_decoder_page
+        from structure_reader.render import diagram_source_labels as dsl
+
+        cls.doc = build_reading_document(REPO_ROOT)
+        cls.html_text = render_decoder_page(cls.doc).decode("utf-8")
+        cls.dsl = dsl
+
+    @staticmethod
+    def _svg_geoms(svg: str):
+        """解析 SVG：圆点圆心（含 title）、IO/计算框矩形、路径端点。"""
+        circle_by_title = {}
+        for m in re.finditer(
+                r'<g class="dg-dot ([^"]*)" transform="translate\(([\d.-]+),([\d.-]+)\)">'
+                r'<circle r="5"/><title>([^<]*)</title>', svg):
+            circle_by_title[m.group(4)] = (float(m.group(2)), float(m.group(3)))
+        rects = [(float(a), float(b), float(w), float(h)) for a, b, w, h in re.findall(
+            r'<g class="dg-(?:node|port) [^"]*" transform="translate\(([\d.-]+),([\d.-]+)\)">'
+            r'<rect width="([\d.]+)" height="([\d.]+)"', svg)]
+        paths = [(float(a), float(b), float(c), float(d)) for a, b, c, d in re.findall(
+            r'<path class="dg-edge[^"]*" d="M([\d.-]+),([\d.-]+) C[^"]*'
+            r'([\d.-]+),([\d.-]+)"', svg)]
+        return circle_by_title, rects, paths
+
+    def test_paths_reach_port_dots(self):
+        """端口真接回放：href 指向的张量圆点必须与该边某一端点重合（±7px，
+        旧 162px 悬空为 0）；IO 标识边端点落在其 24px 高边界上。"""
+        svgs = re.findall(r"<svg class=\"dg\".*?</svg>", self.html_text, re.S)
+        checked = 0
+        for svg in svgs:
+            circle_by_title, rects, _paths = self._svg_geoms(svg)
+            dot_by_tid = {}
+            for title, center in circle_by_title.items():
+                dot_by_tid[title.split(" · ")[0]] = center
+            for m in re.finditer(
+                    r'<a href="#t-([\w-]+)"><path class="dg-edge[^"]*" '
+                    r'd="M([\d.-]+),([\d.-]+) C[\d.-]+,[\d.-]+ [\d.-]+,[\d.-]+ '
+                    r'([\d.-]+),([\d.-]+)"', svg):
+                tid = m.group(1).split("-", 1)[1]  # href = #t-{phase}-{tid}
+                endpoints = [(float(m.group(2)), float(m.group(3))),
+                             (float(m.group(4)), float(m.group(5)))]
+                if tid in dot_by_tid:
+                    cx, cy = dot_by_tid[tid]
+                    d = min((sx - cx) ** 2 + (sy - cy) ** 2
+                            for sx, sy in endpoints) ** 0.5
+                    checked += 1
+                    self.assertLessEqual(d, 7.0,
+                                         f"圆点 {tid} 距箭头端点 {d:.1f}px（悬空）")
+                else:
+                    # IO 标识：端点须落在其 172×24 矩形边界 6px 内
+                    hit = False
+                    for rx, ry, rw, rh in rects:
+                        if rh == 24:
+                            for sx, sy in endpoints:
+                                if (rx - 6 <= sx <= rx + rw + 6
+                                        and ry - 6 <= sy <= ry + rh + 6):
+                                    hit = True
+                    if any(tid == "hidden_streams_in" or tid == "hidden_streams_out"
+                           for tid in [tid]):
+                        checked += 1
+                        self.assertTrue(hit, f"IO 标识 {tid} 边端点未接到端口边界")
+        self.assertGreater(checked, 100, "端口连线回放样本不足")
+
+    def test_cond_and_name_shape_both_visible(self):
+        """条件边：条件行与源码名/shape 行同时在可见 tspan 中（不再互斥/截断）。"""
+        svgs = re.findall(r"<svg class=\"dg\".*?</svg>", self.html_text, re.S)
+        cond_labels = 0
+        for svg in svgs:
+            for m in re.finditer(
+                    r'<text class="elabel" x="[\d.-]+" y="[\d.-]+"[^>]*>'
+                    r"((?:<tspan[^>]*>[^<]*</tspan>)+)", svg):
+                lines = re.findall(r"<tspan[^>]*>([^<]*)</tspan>", m.group(1))
+                joined = "".join(lines)
+                if any(k in joined for k in ("仅 N_win", "追加 N_win", "余量回写")):
+                    cond_labels += 1
+                    self.assertTrue(
+                        any("[" in ln and "]" in ln for ln in lines),
+                        f"条件标签缺可见 shape：{lines}")
+                    self.assertTrue(
+                        any("self." in ln or "past_key_values" in ln for ln in lines),
+                        f"条件标签缺可见源码名：{lines}")
+        self.assertGreater(cond_labels, 20, "条件标签回放样本不足")
+
+    def test_no_shape_truncation(self):
+        """全部边标签的可见行拼接 == 语义全文（12 类两行截断维度回归为 0）。"""
+        svgs = re.findall(r"<svg class=\"dg\".*?</svg>", self.html_text, re.S)
+        checked = 0
+        for svg in svgs:
+            for m in re.finditer(
+                    r'<text class="elabel[^"]*" x="[\d.-]+" y="[\d.-]+"[^>]*>'
+                    r"((?:<tspan[^>]*>[^<]*</tspan>)+)<title>([^<]*)</title>", svg):
+                import html as _h
+                lines = [_h.unescape(x) for x in
+                         re.findall(r"<tspan[^>]*>([^<]*)</tspan>", m.group(1))]
+                full = _h.unescape(m.group(2))
+                checked += 1
+                if "｜" in full and len(lines) > 1:
+                    # 条件行 + 名称/shape 行（title 以｜分隔）：可见行拼接须还原全文
+                    expected = lines[0] + "".join(lines[1:])
+                    expected = expected  # 与 full 去｜后一致
+                    self.assertEqual(expected, full.replace("｜", ""),
+                                     f"可见标签与全文不一致（截断）：{expected!r}")
+                    continue
+                expected = "".join(lines)
+                self.assertEqual(expected, full,
+                                 f"可见标签与全文不一致（截断）：{expected!r}")
+        self.assertGreater(checked, 400)
+
+    def test_source_name_semantic_corrections(self):
+        """具名 4 例修正 + 同类图内代号不再混称源码表达式。"""
+        dsl = self.dsl
+        self.assertEqual(
+            dsl.tensor_source_label("expert_gu_out"),
+            "F.linear(hidden_states[token_idx], self.gate_up_proj[expert_idx])")
+        self.assertEqual(dsl.tensor_source_label("i_scores"),
+                         "index_scores（scorer 返回）")
+        self.assertEqual(dsl.op_source_label({"id": "q_a_norm"}),
+                         "self.q_a_norm(self.q_a_proj(hidden_states))")
+        self.assertEqual(
+            dsl.tensor_source_label("expert_down_raw"),
+            "F.linear(current, self.down_proj[expert_idx])")
+        all_values = " ".join(v for v, _ in dsl.OP_SOURCE.values()) + " " + \
+            " ".join(v for v, _ in dsl._T.values())
+        for bad in ("down[e]", "gate_up[e]", "(q_a)", "combT,", "*Out "):
+            self.assertNotIn(bad, all_values, f"图内代号混入源码名：{bad}")
+        # 消歧标注明确非源码变量的场合保留括注（如 full（update 返回））
+        self.assertIn("（", dsl.tensor_source_label("kv_full"))
+
+    def test_node_source_name_fully_visible(self):
+        """框内源码名完整可见：实际 SVG nlabel 拼接 == 完整源码名
+        （回放 review02 的 5 具名截断：moe_expert_gu/slice、i_topk、
+        attn/ffn_residual_mix；两阶段共 10 次出现）。"""
+        import html as _h
+
+        from structure_reader.render.diagram_source_labels import op_source_label
+
+        svgs = re.findall(r"<svg class=\"dg\".*?</svg>", self.html_text, re.S)
+        named_seen = 0
+        named = {"moe_expert_gu", "moe_expert_slice", "i_topk",
+                 "attn_residual_mix", "ffn_residual_mix"}
+        checked = 0
+        for svg in svgs:
+            for m in re.finditer(
+                    r'<g class="dg-node op" transform="translate\([\d.-]+,[\d.-]+\)">'
+                    r"<rect[^>]*/><title>([^<·]*) · [^<]*</title>(.*?)</g>", svg):
+                oid = m.group(1).strip()
+                full = op_source_label({"id": oid})
+                if full is None:
+                    continue
+                nlabels = re.findall(r'<text class="nlabel"[^>]*>([^<]*)</text>',
+                                     m.group(2))
+                visible = _h.unescape("".join(nlabels))
+                checked += 1
+                self.assertEqual(visible, full,
+                                 f"{oid} 框内源码名被截断：{visible!r}")
+                if oid in named:
+                    named_seen += 1
+        self.assertGreater(checked, 100)
+        self.assertEqual(named_seen, 10, "5 具名算子应两阶段各出现一次且完整")
+
+    def test_node_long_name_fixture_wraps_without_cap(self):
+        """自包含回放：超长源码名按需换行（无 3 行硬上限），高度随行数增长。"""
+        phase = fixture_phase()
+        long_op = _op("opXL", ["x_in"], ["y"])
+        long_op["name"] = "F.linear(hidden_states[token_idx], self.gate_up_proj[expert_idx])"
+        phase["operators"] = [long_op]
+        g = build_module_graph(phase, {"id": "xl", "title": "x", "ops": [long_op]})
+        svg = render_svg(g)
+        nlabels = re.findall(r'<text class="nlabel"[^>]*>([^<]*)</text>', svg)
+        import html as _h
+        self.assertEqual(_h.unescape("".join(nlabels)), long_op["name"],
+                         "框内长名被行数上限截断")
+        self.assertGreater(len(nlabels), 3, "长名应超过旧 3 行上限")
+        h = float(re.search(r'<rect width="172" height="([\d.]+)"', svg).group(1))
+        self.assertGreaterEqual(h, 12 + 12 * len(nlabels), "节点高度未容纳全部行")
+
+    def test_dark_theme_arrow_contrast(self):
+        """暗主题 flow/weight/cache 箭头成对浅色：按 WCAG 静态计算对比度。"""
+        css = diagram_css()
+
+        def lum(hex_color: str) -> float:
+            r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+            def lin(c):
+                return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+            return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+        def ratio(c1: str, c2: str) -> float:
+            l1, l2 = sorted((lum(c1), lum(c2)), reverse=True)
+            return (l1 + 0.05) / (l2 + 0.05)
+
+        dark_bg, light_bg = "#1d2126", "#f6f7f9"
+        dark_block = css[css.index("@media (prefers-color-scheme: dark)"):]
+        flow_light = re.search(r"\.dg-edge\.flow \{ stroke: (#[0-9a-f]+)", css).group(1)
+        flow_dark = re.search(r"\.dg-edge\.flow \{ stroke: (#[0-9a-f]+)", dark_block).group(1)
+        self.assertGreaterEqual(ratio(flow_dark, dark_bg), 4.5,
+                                f"暗主题 flow 对比 {ratio(flow_dark, dark_bg):.2f}")
+        self.assertGreaterEqual(ratio(flow_light, light_bg), 4.5)
+        for kind in ("weight", "cache"):
+            c_dark = re.search(rf"\.dg-edge\.{kind} \{{ stroke: (#[0-9a-f]+)",
+                               dark_block).group(1)
+            self.assertGreaterEqual(ratio(c_dark, dark_bg), 4.5,
+                                    f"暗主题 {kind} 对比不足")
+        # 框字保持已认可对比（主行 ≥7）
+        self.assertGreaterEqual(ratio("#1f2933", "#fcfdfe"), 7.0)
 
 
 if __name__ == "__main__":

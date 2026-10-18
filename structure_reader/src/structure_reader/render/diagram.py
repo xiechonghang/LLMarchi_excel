@@ -17,6 +17,15 @@ from __future__ import annotations
 
 import html
 
+from structure_reader.render.diagram_source_labels import (
+    MODELING_FILE,
+    compute_type_label,
+    op_source_label,
+    op_source_locator,
+    tensor_source_label,
+    tensor_source_locator,
+)
+
 __all__ = [
     "module_groups",
     "build_module_graph",
@@ -173,12 +182,16 @@ def _edge_kind(tid: str, tensors: dict[str, dict]) -> str:
 
 
 def _tensor_label(tid: str, tensors: dict[str, dict]) -> str:
+    """边上张量标签：源码变量/表达式名 + 符号 shape（ONNX 式：tensor 是箭头上的
+    传输信息，不是计算框）。无源码映射时回退文档名并标注（内部 id 不冒充源码）。"""
     t = tensors.get(tid)
-    if t is None:
-        return tid
-    shape = ",".join(str(a) for a in t.get("shape", []))
-    name = t.get("name", tid)
-    return f"{name} [{shape}]" if shape else name
+    shape = ",".join(str(a) for a in t.get("shape", [])) if t else ""
+    src = tensor_source_label(tid)
+    if src:
+        return f"{src} [{shape}]" if shape else src
+    name = t.get("name", tid) if t else tid
+    label = f"{name} [{shape}]" if shape else name
+    return label + "（语义id）" if t else label
 
 
 def _cond_label(op_id: str, phase: dict) -> str:
@@ -190,21 +203,39 @@ def _cond_label(op_id: str, phase: dict) -> str:
 
 
 def _op_node(phase: dict, op: dict) -> dict:
+    """计算框节点：源码调用名/表达式为主行，实际计算类型为副行（复合如实列出）。
+    title 保留算子 id、模块路径与源码行号联查。"""
+    src = op_source_label(op)
+    locator = op_source_locator(op)
+    label = src if src else op.get("name", op["id"])
+    sub = compute_type_label(op)
+    title_bits = [op["id"], op.get("module_path", "")]
+    if locator:
+        title_bits.append(f"{MODELING_FILE.split('/')[-1]}:{locator}")
     return {
         "id": f"op:{op['id']}", "kind": "op",
-        "label": op.get("name", op["id"]), "sub": op.get("op", ""),
+        "label": label, "sub": sub,
         "href": f"#op-{phase['id']}-{op['id']}",
-        "title": f"{op['id']} · {op.get('module_path', '')}",
+        "title": " · ".join(b for b in title_bits if b),
     }
 
 
 def _tensor_node(phase: dict, tid: str, tensors: dict[str, dict], kind_hint: str,
                  sub: str = "") -> dict:
+    """非计算端点（端口）：渲染为小圆点/输入输出标识，不再画 tensor/权重/缓存矩形。
+    文字（源码名+shape+时序角色）走箭头标签；title 保留内部 id 与源码行号联查。"""
     t = tensors.get(tid, {})
+    src = tensor_source_label(tid)
+    locator = tensor_source_locator(tid)
+    if src:
+        label = src
+    else:
+        label = t.get("name", tid)
+    title = tid + (f" · {MODELING_FILE.split('/')[-1]}:{locator}" if locator else "")
     return {
         "id": f"t:{tid}", "kind": kind_hint,
-        "label": _tensor_label(tid, tensors), "sub": sub or tid,
-        "href": f"#t-{phase['id']}-{tid}", "title": tid,
+        "label": label, "sub": sub or tid,
+        "href": f"#t-{phase['id']}-{tid}", "title": title,
     }
 
 
@@ -324,14 +355,16 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
     nodes: dict[str, dict] = {}
     for g in groups:
         nodes[f"m:{g['id']}"] = {
-            "id": f"m:{g['id']}", "kind": "module", "label": g["title"],
-            "sub": f"{len(g['ops'])} 算子", "href": f"#mod-{phase['id']}-{g['id']}",
+            "id": f"m:{g['id']}", "kind": "nav", "label": g["title"],
+            "sub": f"导航 · {len(g['ops'])} 算子",
+            "href": f"#mod-{phase['id']}-{g['id']}",
             "title": "，".join(op["id"] for op in g["ops"]),
         }
     for tid in ("hidden_streams_in", "input_ids", "position_ids", "hidden_streams_out"):
         if tid in tensors:
             nodes[f"t:{tid}"] = {
-                "id": f"t:{tid}", "kind": "boundary", "label": tensors[tid]["name"],
+                "id": f"t:{tid}", "kind": "boundary",
+                "label": tensor_source_label(tid) or tensors[tid]["name"],
                 "sub": tid, "href": f"#t-{phase['id']}-{tid}", "title": tid,
             }
     cache_families_present = {
@@ -341,8 +374,9 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
     for family in ("main", "csa", "indexer"):
         if family in cache_families_present:
             nodes[f"c:{family}"] = {
-                "id": f"c:{family}", "kind": "cache", "label": _CACHE_FAMILY_TITLES[family],
-                "sub": "调用前→读视图→调用后", "href": f"#cache-{phase['id']}-{family}",
+                "id": f"c:{family}", "kind": "navlane", "label": _CACHE_FAMILY_TITLES[family],
+                "sub": "导航 · 调用前→读视图→调用后",
+                "href": f"#cache-{phase['id']}-{family}",
                 "title": _CACHE_FAMILY_TITLES[family],
             }
 
@@ -505,13 +539,15 @@ def build_cache_graphs(phase: dict, family_rules=None, cache_op_ids=None) -> lis
                 continue
             if e["src"].startswith("t:") and e["dst"].startswith("op:"):
                 tid = e["src"][2:]
-                e["label"] = ("读调用前状态" if not producers.get(tid)
-                              else "读本次产出（缓存视图）")
+                e["label"] = (("读调用前状态" if not producers.get(tid)
+                               else "读本次产出（缓存视图）")
+                              + f"：{_tensor_label(tid, tensors)}")
             elif e["src"].startswith("op:") and e["dst"].startswith("t:"):
                 tid = e["dst"][2:]
                 role = _cache_role(tid, phase, producers, consumers, inner_ids)
-                e["label"] = ("产出本次读视图" if role.startswith("本次读视图")
-                              else "写调用后状态")
+                e["label"] = (("产出本次读视图" if role.startswith("本次读视图")
+                               else "写调用后状态")
+                              + f"：{_tensor_label(tid, tensors)}")
         # 下游 chip：族外真实消费者（inputs 或 weights 引用）
         for tid in tids:
             role = _cache_role(tid, phase, producers, consumers, inner_ids)
@@ -527,7 +563,8 @@ def build_cache_graphs(phase: dict, family_rules=None, cache_op_ids=None) -> lis
                     "href": f"#op-{phase['id']}-{cid}", "title": cid,
                 })
                 edges.append(_edge(f"t:{tid}", f"d:{cid}", "flow",
-                                   "本次读视图→参与计算", "", "", cid))
+                                   f"本次读视图→参与计算：{_tensor_label(tid, tensors)}",
+                                   "", "", cid))
         graphs.append({
             "id": family, "title": _CACHE_FAMILY_TITLES.get(family, family),
             "anchor": f"cache-{phase['id']}-{family}",
@@ -548,8 +585,9 @@ def _layout(nodes: list[dict], edges: list[dict]) -> dict[str, tuple[int, int]]:
     其余节点：仅作为边源（边界/权重/调用前缓存）放最左列；作为边终点
     （输出端口/调用后回写/下游 chip）放最右列；孤立节点放最左列。
     """
-    layered = [n for n in nodes if n["kind"] in ("op", "module")]
-    others = [n for n in nodes if n["kind"] not in ("op", "module")]
+    layered_kinds = ("op", "module", "nav", "navlane")
+    layered = [n for n in nodes if n["kind"] in layered_kinds]
+    others = [n for n in nodes if n["kind"] not in layered_kinds]
     layer = {n["id"]: 0 for n in layered}
     layered_ids = set(layer)
     pairs = [(e["src"], e["dst"]) for e in edges
@@ -594,16 +632,25 @@ _PAD = 16.0
 
 
 def _node_lines(node: dict) -> list[str]:
-    return _wrap(node["label"], 19)
+    """框内主行（源码名）：按需换行、无行数上限——用户要求框内源码名完整可见，
+    节点高度随行数自适应；不为塞进固定行数而截断真实信息。"""
+    return _wrap(node["label"], 19, max_lines=None)
+
+
+def _node_sub_lines(node: dict) -> list[str]:
+    """计算类型副行：完整显示不截断（最多 2 行，长者换行）。"""
+    sub = node.get("sub", "")
+    return _wrap(sub, 30)[:2] if sub else []
 
 
 def _node_height(node: dict, lines: list[str]) -> float:
-    """节点高度容纳实际文字行数；有副标题时预留其基线，避免重叠。"""
-    h = 12.0 + 12.0 * len(lines) + (13.0 if node.get("sub") else 8.0)
+    """节点高度容纳实际文字行数与副标题行数，避免重叠/截断。"""
+    sub_lines = _node_sub_lines(node)
+    h = 12.0 + 12.0 * len(lines) + (13.0 * len(sub_lines) if sub_lines else 8.0)
     return max(_NODE_H_MIN, h)
 
 
-def _wrap(text: str, limit: int) -> list[str]:
+def _wrap(text: str, limit: int, max_lines: int | None = 3) -> list[str]:
     lines: list[str] = []
     current, width = "", 0
     for ch in text:
@@ -616,12 +663,15 @@ def _wrap(text: str, limit: int) -> list[str]:
             width += w
     if current:
         lines.append(current)
-    return lines[:3] or [""]
+    if max_lines is not None:
+        lines = lines[:max_lines]
+    return lines or [""]
 
 
 def _wrap_edge_label(text: str) -> list[str]:
-    """边标签有界换行（最多 2 行；全文放 <title> 联查/悬停）。"""
-    return _wrap(text, 30)[:2]
+    """边标签有界换行（最多 3 行；全文放 <title> 联查/悬停）——
+    源码名与 shape 维度不再因两行截断丢失。"""
+    return _wrap(text, 30)[:3]
 
 
 def _label_block_box(full_label: str) -> tuple[float, float, int]:
@@ -646,17 +696,29 @@ def render_svg(graph: dict) -> str:
     画布高度在排布后按实际占用扩展。
     """
     uid = html.escape(f"{graph.get('phase', 'p')}-{graph.get('id', 'g')}", quote=True)
-    # 每图自适应留白：列间隙须容纳本图最宽标签块（否则该图加宽），行走廊同理
-    max_block_w, any_two_line = 0.0, False
+    # 每图自适应留白：列间隙须容纳本图最宽标签块（否则该图加宽），行走廊同理。
+    # 标签块 = 条件行（如有）+ 源码名/shape 换行（最多 3 行）——条件与名称/维度
+    # 都必须可见，不再用 cond 替换 tensor 信息。
+    def _edge_label_lines(e: dict) -> list[str]:
+        cond = e.get("cond", "")
+        label = e.get("label", "")
+        if cond and label:
+            return [cond] + _wrap_edge_label(label)
+        if label:
+            return _wrap_edge_label(label)
+        return [cond] if cond else []
+
+    max_block_w, max_label_lines = 0.0, 0
     for e in graph["edges"]:
-        full_label = e.get("cond") or e.get("label", "")
-        if not full_label:
+        lines = _edge_label_lines(e)
+        if not lines:
             continue
-        w, n_lines, _ = _label_block_box(full_label)
+        w = max(sum(10.0 if ord(ch) > 0x2E80 else 5.5 for ch in ln) for ln in lines) + 8.0
         max_block_w = max(max_block_w, w)
-        any_two_line = any_two_line or n_lines >= 2
+        max_label_lines = max(max_label_lines, len(lines))
     col_gap = max(_COL_GAP_MIN, max_block_w + 10.0)
-    row_gap = max(_ROW_GAP_MIN, 30.0 if any_two_line else _ROW_GAP_MIN)
+    # 行走廊须容纳最高标签块（8 上沿 + 11×(行数-1) + 2 下沿）+ 5px 余量
+    row_gap = max(_ROW_GAP_MIN, 8.0 + 11.0 * (max_label_lines - 1) + 2.0 + 5.0)
     col_w = _NODE_W + col_gap
 
     positions = _layout(graph["nodes"], graph["edges"])
@@ -679,11 +741,36 @@ def render_svg(graph: dict) -> str:
     width = (max_c - min_c + 1) * col_w + 2 * _PAD
     node_height = y_cursor - row_gap + _PAD
 
+    # 真实节点几何：计算/导航框（172×h）、IO 标识（172×24）、端口圆点（r=5，
+    # 圆心 (x+10, y+12)）——箭头锚点按实际形状边界求，不再用旧 172px 隐形矩形。
+    node_geom: dict[str, dict] = {}
+    for n in graph["nodes"]:
+        if n["id"] not in positions:
+            continue
+        c, r = positions[n["id"]]
+        x = _PAD + (c - min_c) * col_w
+        y = row_y[r]
+        if n["kind"] in ("op", "nav", "navlane"):
+            h = h_by_node[n["id"]]
+            node_geom[n["id"]] = {
+                "left": (x, y + h / 2), "right": (x + _NODE_W, y + h / 2),
+                "cx": x + _NODE_W / 2, "cy": y + h / 2, "shape": "box",
+            }
+        elif n["id"] in ("t:hidden_streams_in", "t:hidden_streams_out"):
+            node_geom[n["id"]] = {
+                "left": (x, y + 12), "right": (x + _NODE_W, y + 12),
+                "cx": x + _NODE_W / 2, "cy": y + 12, "shape": "io",
+            }
+        else:
+            cx, cy = x + 10.0, y + 12.0
+            node_geom[n["id"]] = {
+                "left": (cx - 6.0, cy), "right": (cx + 6.0, cy),
+                "cx": cx, "cy": cy, "shape": "dot",
+            }
+
     def anchor(nid: str, side: str) -> tuple[float, float]:
-        c, r = positions[nid]
-        x = _PAD + (c - min_c) * col_w + (_NODE_W if side == "out" else 0)
-        y = row_y[r] + h_by_node[nid] / 2
-        return x, y
+        geom = node_geom[nid]
+        return geom["right"] if side == "out" else geom["left"]
 
     # 列间隙中心 / 行走廊中心（标签块避让的候选空位；块放入即完全脱离节点矩形）
     gap_centers: list[float] = []
@@ -774,6 +861,8 @@ def render_svg(graph: dict) -> str:
         pair_idx[key] = i + 1
         x1, y1 = anchor(e["src"], "out")
         x2, y2 = anchor(e["dst"], "in")
+        # marker 箭头头部需留 3px：仅框形终点收缩；圆点端口已按半径偏移（cx-6）
+        end_trim = 3.0 if node_geom[e["dst"]]["shape"] in ("box", "io") else 0.0
         mid_x = (x1 + x2) / 2
         c1, _ = positions[e["src"]]
         c2, _ = positions[e["dst"]]
@@ -784,9 +873,9 @@ def render_svg(graph: dict) -> str:
             bow = (18.0 if i % 2 == 0 else -18.0) + (6.0 if pair_count[key] > 1 else 0.0)
         cy1 = y1 + bow
         cy2 = y2 + bow
-        pts = ((x1, y1), (mid_x, cy1), (mid_x, cy2), (x2 - 3, y2))
+        pts = ((x1, y1), (mid_x, cy1), (mid_x, cy2), (x2 - end_trim, y2))
         path_d = (f"M{x1:g},{y1:g} C{mid_x:g},{cy1:g} {mid_x:g},{cy2:g} "
-                  f"{x2 - 3:g},{y2:g}")
+                  f"{x2 - end_trim:g},{y2:g}")
         cls = f"dg-edge {e['kind']}" + (" cond" if e.get("cond") else "")
         marker_kind = {"flow": "flow", "weight": "weight"}.get(e["kind"], "cache")
         path = (f'<path class="{cls}" d="{path_d}" '
@@ -794,9 +883,10 @@ def render_svg(graph: dict) -> str:
         if e.get("href"):
             path = f'<a href="{html.escape(e["href"])}">{path}</a>'
         edge_parts.append(path)
-        full_label = e.get("cond") or e.get("label", "")
-        if full_label:
-            label_lines = _wrap_edge_label(full_label)
+        # 标签块 = 条件行（如有，条件样式）+ 源码名/shape 换行——两者都可见
+        label_lines = _edge_label_lines(e)
+        has_cond = bool(e.get("cond")) and bool(e.get("label"))
+        if label_lines and any(ln for ln in label_lines):
             n_lines = len(label_lines)
             half_w = max(sum(10.0 if ord(ch) > 0x2E80 else 5.5 for ch in line)
                          for line in label_lines) / 2 + 4.0
@@ -832,9 +922,12 @@ def render_svg(graph: dict) -> str:
                         lx, ly = px, cand_ly
                         break
             placed.append({"lx": lx, "ly": ly, "lines": label_lines, "half_w": half_w})
+            cond_txt = e.get("cond", "")
+            label_txt = e.get("label", "")
+            full = (cond_txt + "｜" + label_txt) if has_cond else label_txt
             label_slots.append({
-                "lx": lx, "ly": ly, "lines": label_lines, "cond": bool(e.get("cond")),
-                "full": full_label, "half_w": half_w,
+                "lx": lx, "ly": ly, "lines": label_lines, "cond": has_cond,
+                "full": full, "half_w": half_w,
             })
     # 同列（同 x）标签按「实际占用块」排布：下一标签首行基线距上一标签
     # 末行基线 ≥ 13px（两行标签按末行推让，不再只剩首行间距）；
@@ -873,40 +966,63 @@ def render_svg(graph: dict) -> str:
     ]
     parts.extend(edge_parts)
     for slot in label_slots:
-        cond_cls = " elabel-cond" if slot["cond"] else ""
-        spans = "".join(
-            f'<tspan x="{slot["lx"]:g}" dy="{0 if k == 0 else 11:g}">'
-            f"{html.escape(line)}</tspan>" for k, line in enumerate(slot["lines"]))
+        # 条件行用条件色，其余行（源码名/shape）用常规边标签色——两者都可见
+        spans = ""
+        for k, line in enumerate(slot["lines"]):
+            cls = ' class="elabel-cond"' if slot["cond"] and k == 0 else ""
+            spans += (f'<tspan{cls} x="{slot["lx"]:g}" '
+                      f'dy="{0 if k == 0 else 11:g}">{html.escape(line)}</tspan>')
         parts.append(
-            f'<text class="elabel{cond_cls}" x="{slot["lx"]:g}" y="{slot["ly"]:g}" '
+            f'<text class="elabel" x="{slot["lx"]:g}" y="{slot["ly"]:g}" '
             f'text-anchor="middle">{spans}<title>{html.escape(slot["full"])}</title></text>')
     for n in graph["nodes"]:
         if n["id"] not in positions:
             continue
         c, r = positions[n["id"]]
-        h = h_by_node[n["id"]]
         x = _PAD + (c - min_c) * col_w
         y = row_y[r]
         title = f'<title>{html.escape(n.get("title", n["label"]))}</title>'
-        body = ""
-        lines = lines_by_node[n["id"]]
-        for k, line in enumerate(lines):
-            body += (f'<text class="nlabel" x="{_NODE_W / 2:g}" y="{14 + k * 12:g}" '
-                     f'text-anchor="middle">{html.escape(line)}</text>')
-        sub = n.get("sub", "")
-        if sub:
-            body += (f'<text class="nsub" x="{_NODE_W / 2:g}" y="{h - 6:g}" '
-                     f'text-anchor="middle">{html.escape(sub[:34])}</text>')
-        node = (f'<g class="dg-node {n["kind"]}" transform="translate({x:g},{y:g})">'
-                f'<rect width="{_NODE_W:g}" height="{h:g}" rx="7"/>{title}{body}</g>')
-        if n.get("href"):
-            node = f'<a href="{html.escape(n["href"])}">{node}</a>'
+        href = f'<a href="{html.escape(n["href"])}">' if n.get("href") else ""
+        href_end = "</a>" if href else ""
+        if n["kind"] in ("op", "nav", "navlane"):
+            # 计算框（op：源码名 + 实际计算类型）或导航框（总览模块/缓存通道，
+            # 虚线，明确不是计算算子）
+            h = h_by_node[n["id"]]
+            body = ""
+            lines = lines_by_node[n["id"]]
+            for k, line in enumerate(lines):
+                body += (f'<text class="nlabel" x="{_NODE_W / 2:g}" y="{14 + k * 12:g}" '
+                         f'text-anchor="middle">{html.escape(line)}</text>')
+            sub_lines = _node_sub_lines(n)
+            for k, sline in enumerate(sub_lines):
+                body += (f'<text class="nsub" x="{_NODE_W / 2:g}" '
+                         f'y="{h - 6 - 13 * (len(sub_lines) - 1 - k):g}" '
+                         f'text-anchor="middle">{html.escape(sline)}</text>')
+            node = (f'{href}<g class="dg-node {n["kind"]}" '
+                    f'transform="translate({x:g},{y:g})">'
+                    f'<rect width="{_NODE_W:g}" height="{h:g}" rx="7"/>{title}{body}</g>'
+                    f'{href_end}')
+        elif n["id"] in ("t:hidden_streams_in", "t:hidden_streams_out"):
+            # 初始 hidden_states 输入 / 层输出标识：非计算框的显式端口标签
+            node = (f'{href}<g class="dg-port io" transform="translate({x:g},{y:g})">'
+                    f'<rect width="{_NODE_W:g}" height="24" rx="12"/>{title}'
+                    f'<text class="portlabel" x="{_NODE_W / 2:g}" y="16" '
+                    f'text-anchor="middle">{html.escape(n["label"])}</text></g>{href_end}')
+        else:
+            # tensor/权重/缓存状态端点：小圆点端口（源码名+shape 走箭头标签，
+            # 不再画与计算框相似的矩形）
+            node = (f'{href}<g class="dg-dot {n["kind"]}" '
+                    f'transform="translate({x + 10:g},{y + 12:g})">'
+                    f'<circle r="5"/>{title}</g>{href_end}')
         parts.append(node)
     parts.append("</svg>")
     return "".join(parts)
 
 
 _LEGEND_ITEMS = (
+    ("opbox", "计算算子框（源码名 + 实际计算类型）"),
+    ("navbox", "导航框（总览模块/缓存通道，虚线——非计算算子）"),
+    ("dot", "端口圆点（tensor/权重/缓存状态端点；源码名+shape 在箭头上）"),
     ("flow", "数据流（激活/索引/掩码张量，箭头=producer→consumer）"),
     ("weight", "权重/参数引用（虚线；不改变数据流方向）"),
     ("cache", "缓存状态（点线；调用前读入算子 / 算子写调用后状态）"),
@@ -923,36 +1039,72 @@ def legend_html() -> str:
 
 
 def diagram_css() -> str:
-    """图示样式（内嵌进页面 <style>，随页面单文件离线）。"""
+    """图示样式（内嵌进页面 <style>，随页面单文件离线）。
+
+    配色为图示独立固定高对比成对方案：节点/端口底色固定浅色 → 框内文字固定深色，
+    两个主题下名称/类型/副标题均清晰；边标签随页面主题成对切换（浅底深字/深底浅字，
+    均带同色描边光晕），不再依赖 --ink/--muted 直接叠在固定浅色节点上。
+    """
     return """
 .diagram-scroll { overflow-x: auto; padding: 4px 0; }
 svg.dg { display: block; min-width: 100%; height: auto; font-family: inherit; }
-.dg-node.op rect { fill: #fcfdfe; stroke: var(--accent); stroke-width: 1.4; }
-.dg-node.module rect { fill: #eef3fa; stroke: var(--accent); stroke-width: 1.6; }
+.dg-node.op rect { fill: #fcfdfe; stroke: #1f4e79; stroke-width: 1.4; }
+.dg-node.nav rect { fill: #eef3fa; stroke: #1f4e79; stroke-width: 1.6; stroke-dasharray: 7 4; }
 .dg-node.boundary rect { fill: #e9f7f0; stroke: #1e6d4f; stroke-width: 1.4; }
 .dg-node.weight rect { fill: #fdf6ea; stroke: #b08d57; stroke-width: 1.2; stroke-dasharray: 4 3; }
 .dg-node.cache rect { fill: #eaf1fa; stroke: #2b5d8f; stroke-width: 1.4; }
 .dg-node.port rect { fill: #ffffff; stroke: #5f6b7a; stroke-width: 1.1; stroke-dasharray: 3 2; }
 .dg-node.downstream rect { fill: #f3f0fa; stroke: #6d3f8f; stroke-width: 1.1; }
-.dg-node text { fill: var(--ink); }
-.nlabel { font-size: 12px; font-weight: 600; }
-.nsub { font-size: 10px; fill: var(--muted); }
+/* 框内文字固定深色（底色固定浅色，两个主题都可读）；副标题显式覆盖 */
+.dg-node text { fill: #1f2933; }
+.dg-node .nlabel { fill: #1f2933; font-size: 12px; font-weight: 600; }
+.dg-node .nsub { fill: #4a5568; font-size: 10px; }
+/* 端口：tensor/权重/缓存状态为小圆点（非计算框）；hidden_states 为输入/输出标识 */
+.dg-dot circle { fill: #5f6b7a; stroke: #ffffff; stroke-width: 1.2; }
+.dg-dot.boundary circle { fill: #1e6d4f; }
+.dg-dot.weight circle { fill: #b08d57; }
+.dg-dot.cache circle { fill: #2b5d8f; }
+.dg-dot.port circle { fill: #5f6b7a; }
+.dg-dot.downstream circle { fill: #6d3f8f; }
+.dg-port.io rect { fill: #e9f7f0; stroke: #1e6d4f; stroke-width: 1.3; stroke-dasharray: 5 3; }
+.dg-port .portlabel { fill: #1f2933; font-size: 11px; font-weight: 700; }
 .dg-edge { fill: none; stroke-width: 1.5; }
-.dg-edge.flow { stroke: var(--accent); }
+.dg-edge.flow { stroke: #1f4e79; }
 .dg-edge.weight { stroke: #b08d57; stroke-dasharray: 5 4; }
 .dg-edge.cache { stroke: #2b5d8f; stroke-dasharray: 2 3; }
 .dg-edge.cond { stroke-dasharray: 7 4; }
-.dg-arr-flow { fill: var(--accent); }
+.dg-arr-flow { fill: #1f4e79; }
 .dg-arr-weight { fill: #b08d57; }
-.dg-arr-cache { fill: #2b5d8f; }
-.elabel { font-size: 10px; fill: var(--muted); paint-order: stroke; stroke: var(--card); stroke-width: 3px; }
+.dg-arr-cache { fill: #2b5d8f; }/* 边标签随主题成对：浅色主题深字浅晕 / 深色主题浅字深晕，均不依赖节点底色 */
+.elabel { font-size: 10px; fill: #33404d; paint-order: stroke; stroke: rgba(246,247,249,0.92); stroke-width: 3px; }
 .elabel-cond { fill: #8f2b4d; font-weight: 700; }
 .dg-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
 .dg-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .dg-swatch { display: inline-block; width: 26px; height: 0; border-top-width: 2.5px; }
-.dg-swatch.flow { border-top-style: solid; border-top-color: var(--accent); }
+.dg-swatch.opbox { border-top-style: solid; border-top-color: #1f4e79; }
+.dg-swatch.navbox { border-top-style: dashed; border-top-color: #1f4e79; }
+.dg-swatch.dot { border-top-style: dotted; border-top-color: #5f6b7a; }
+.dg-swatch.flow { border-top-style: solid; border-top-color: #1f4e79; }
 .dg-swatch.weight { border-top-style: dashed; border-top-color: #b08d57; }
 .dg-swatch.cache { border-top-style: dotted; border-top-color: #2b5d8f; }
 .dg-swatch.cond { border-top-style: dashed; border-top-color: #8f2b4d; }
 .dg-note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+@media (prefers-color-scheme: dark) {
+  /* 箭头/marker/图例随主题成对：固定深蓝在暗底对比不足（~1.87），
+     暗主题换浅色画线（对暗卡对比 ≥4.5），浅主题保持原深蓝（≥8） */
+  .dg-edge.flow { stroke: #7fa8d9; }
+  .dg-arr-flow { fill: #7fa8d9; }
+  .dg-edge.weight { stroke: #d4b183; }
+  .dg-arr-weight { fill: #d4b183; }
+  .dg-edge.cache { stroke: #9fc2e8; }
+  .dg-arr-cache { fill: #9fc2e8; }
+  .dg-swatch.flow { border-top-color: #7fa8d9; }
+  .dg-swatch.weight { border-top-color: #d4b183; }
+  .dg-swatch.cache { border-top-color: #9fc2e8; }
+  .dg-swatch.opbox { border-top-color: #7fa8d9; }
+  .dg-swatch.navbox { border-top-color: #7fa8d9; }
+  .dg-swatch.dot { border-top-color: #9aa7b4; }
+  .elabel { fill: #d9e2ea; stroke: rgba(20,23,27,0.92); }
+  .elabel-cond { fill: #ff9a9a; }
+}
 """

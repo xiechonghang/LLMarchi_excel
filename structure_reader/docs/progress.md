@@ -3,6 +3,10 @@
 ## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
 
 
+- 最新ONNX展示最终静态工程结论（2026-10-19）：原DeepSeek正常完成round01_followup01并空闲；Codex读实际补证脚本/报告/原始日志和4有限内存反例，复跑小补证rc0，真实c97通过、4反例全拒绝，98冻结/84旧候选/16原round01证据与起止及当前复算一致，脚本SHA21eb5843477083dcda091e57c094a55aedcf18b27817f2d3b2ffe88bc878d96b吻合。合并已核42模块/cache548真实端点→JSON方向、5名两阶段完整、628可见标签/538有href名shape/50条件同块、实际CSS配对和原7交付/13源/两build同ID-reused，正式display_static_engineering=passed。[最终复核与新HTML入口](acceptance/hf_m1_onnx_view_gate_review02.md)，证据hf_m1/codex_onnx_view_gate_review02/。补证90无href实际80导航+10cache下游；补证q_a_norm误用算子id的空绑定不采信，Codex直接核真实q_a_normed=q_residual、HF813及两阶段可见JSON shape补足。没有改产品/旧报告或新建门禁平台。
+- 新候选c97d0b5c72a2d6da2936bb74edbb150e9ee29320a89c977ff9a528f277227231/viewer/decoder.html交用户阅读，Excel内容与原认可版本同；browser_visual=blocked/not_verified、native_excel=not_verified、user_reading=pending。2导航总览聚合方向不计548，宽17582/大间距仅静态观察留实际阅读反馈；不代签视觉或M1最终阅读。三个角色均正常完成停止等待，不再派补证/旧单/反复检查门禁，只有新用户阅读反馈/实际错误/意外产品变化才继续对应角色。下方补证处理中已过时，15分钟ACTIVE无变化静默，M2/M3未启。
+
+
 - 最新ONNX展示独立复核01（2026-10-19）：原DeepSeek正常完成round01并报告passed；Codex读两新检查/7正负例/身份脚本/原始日志，实际复跑7项、固定c97诊断、身份均rc0，98冻结/84旧保护、开始结束与新两SHA一致。42模块cache548实际端点→JSON方向0错；2导航总览各40边只核端点（原报告4040为拼接笔误），聚合方向不计548。但独立报告文字/配色/源码绑定覆盖过强：AST只读Assign漏AnnAssign导致OP_SOURCE实际0项，名字比较跳过且label未绑定HF；边名/shape查全页title非本条可见；配色pairs硬编码而未读实际CSS。Codex三有限内存反例（专家投影框缺字、可见边首行缺失保title、nlabel实际CSS白字）旧检查均error0。[复核记录](acceptance/hf_m1_onnx_view_gate_review01.md)，证据hf_m1/codex_onnx_view_gate_review01/。这是验证覆盖缺口，未确认新产品缺陷；保既有产品正确成果，不回GLM/不改模型Excel。
 - 已原可见Terminal22同DeepSeek完整收到onnx_view_gate/round01_followup01/task.md并processing，任务SHA2d216978f9b7a424a34f9e1e0920ec943bb36f188cfe6d5c564aaf4ac0bf1222，派单codex_onnx_view_gate_followup_dispatch01.json。仅在新证据目录一个小补充脚本/报告补实际别名绑定、可见文字、CSS主题配对及三个有限反例（可加一个错别名）；原round01证据和两检查16文件保护只读，c97产品及98freeze SHA4de7e69d3ca469757c493eebcd23674cc38831c4142188f9696fb9c2052bc96d/84旧候选保持。无需新产品身份/重复方向门禁/构建/旧模型Excel审计，GLM/Qwen空闲。预期followup01/independent_result.md/result.json/补充脚本/原始logs/开始结束指纹。下方原round01处理中已过时，勿重发任何旧单；15分钟ACTIVE跟踪本补证。展示最终工程/浏览器/用户阅读尚未通过，M2/M3未启。
 

@@ -108,13 +108,15 @@ def _render_phase(phase: dict) -> str:
     )
 
     # ---- 结构图（展示层；边全部来自本文档 operators/tensors 真实引用）----
-    out.append('<div class="card"><h3>Decoder 结构总览（模块分支/残差/汇合 + 缓存通道）</h3>')
+    # ONNX 式阅读语义：计算框=源码算子名+计算类型；tensor/权重/缓存状态=箭头上
+    # 的源码名+shape（端口圆点）；总览为模块导航（虚线框，非计算算子）。
+    out.append('<div class="card"><h3>Decoder 结构总览（模块导航：分支/残差/汇合 + 缓存通道）</h3>')
     out.append('<div class="diagram-scroll">' +
                render_svg(build_overview_graph(phase)) + "</div>")
     out.append(legend_html())
-    out.append('<p class="dg-note">模块框可点击跳转到下方「模块详细连接图」；'
-               "聚合边可追溯到原始算子/张量（悬停查看张量清单）；"
-               "组内连接与权重引用在模块详图中呈现。</p></div>")
+    out.append('<p class="dg-note">本图为<b>模块导航</b>（虚线框，非计算算子），'
+               "点击跳转到下方「模块详细连接图」查看实际计算框；"
+               "聚合边可追溯到原始算子/张量（悬停查看张量清单）。</p></div>")
 
     cache_graphs = build_cache_graphs(phase)
     if cache_graphs:
@@ -123,19 +125,22 @@ def _render_phase(phase: dict) -> str:
             out.append(f'<h4 id="{html.escape(g["anchor"])}">{html.escape(g["title"])}</h4>')
             out.append('<div class="diagram-scroll">' + render_svg(g) + "</div>")
         out.append(legend_html())
-        out.append('<p class="dg-note">虚线菱形箭头=缓存读写；标注「仅 N_win&gt;0」的条件更新'
-                   "只在闭窗调用发生，无闭窗时状态保留（与算子卡片 note 一致）；"
-                   "「下游算子」chip 联查消费该读视图的原算子卡片。</p></div>")
+        out.append('<p class="dg-note">缓存状态为端口圆点（时序角色与源码名/shape 在箭头上）；'
+                   "标注「仅 N_win&gt;0」的条件更新只在闭窗调用发生，无闭窗时状态保留"
+                   "（与算子卡片 note 一致）；「下游算子」端口联查消费该读视图的原算子卡片。</p></div>")
 
     module_graphs = [(g, build_module_graph(phase, g)) for g in module_groups(phase)]
-    out.append('<div class="card"><h3>模块详细连接图（节点=算子，边=真实张量引用）</h3>')
+    out.append('<div class="card"><h3>模块详细计算图（计算框=源码算子+类型；'
+               "tensor/权重=箭头上的源码名+shape）</h3>")
     for g, graph in module_graphs:
         out.append(f'<h4 id="mod-{html.escape(pid)}-{html.escape(g["id"])}">'
                    f'{html.escape(g["title"])}</h4>')
         out.append('<div class="diagram-scroll">' + render_svg(graph) + "</div>")
     out.append(legend_html())
-    out.append('<p class="dg-note">节点点击联查本阶段算子卡片；边标签=张量名与符号 shape，'
-               "点击联查张量索引；权重为虚线引用边。专家模板仍只有一份（不复制 E 份）。</p></div>")
+    out.append('<p class="dg-note">计算框=真实算子（源码调用名+计算类型，复合算子如实列出），'
+               "点击联查算子卡片；箭头上的 tensor 标注源码变量/表达式名与符号 shape，"
+               "点击联查张量索引；权重为虚线引用。同名源码变量按图内步骤消歧"
+               "（HF 源码逐步重赋值，悬停见源码行号）；专家模板仍只有一份（不复制 E 份）。</p></div>")
 
     # 缓存注记
     cache_notes = phase.get("cache_notes", [])
