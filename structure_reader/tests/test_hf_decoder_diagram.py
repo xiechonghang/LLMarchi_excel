@@ -287,7 +287,7 @@ class TestSvgRendering(unittest.TestCase):
         self.assertEqual(len(paths), len(set(paths)))
 
     def test_parallel_edge_labels_offset(self):
-        """同起终点的平行张量边标签 y 错位（不叠在同一点）。"""
+        """同起终点的平行张量边标签不互叠（纵向布局：同走廊内横向错位）。"""
         phase = self.phase
         phase["operators"][0]["outputs"] = ["a"]
         phase["operators"][2]["inputs"] = ["a", "a"]  # 同张量重复引用为同一 id，改用双张量
@@ -297,9 +297,48 @@ class TestSvgRendering(unittest.TestCase):
                                        "ops": [phase["operators"][0],
                                                phase["operators"][2]]})
         svg = render_svg(g)
-        ys = re.findall(r'<text class="elabel" x="[\d.-]+" y="([\d.-]+)"', svg)
-        self.assertGreaterEqual(len(ys), 2)
-        self.assertNotEqual(ys[0], ys[1], "平行边标签应错位")
+        blocks = self._label_blocks(svg)
+        self.assertGreaterEqual(len(blocks), 2)
+        # 2D 块不重叠（纵向布局中平行标签在同走廊横向错位）
+        for i in range(len(blocks)):
+            for j in range(i + 1, len(blocks)):
+                self.assertTrue(self._blocks_separated(blocks[i], blocks[j]),
+                                f"平行标签互叠：{blocks[i]} vs {blocks[j]}")
+
+    @staticmethod
+    def _view_box(svg: str):
+        m = re.search(r'viewBox="([\d.-]+) ([\d.-]+) ([\d.]+) ([\d.]+)"', svg)
+        return tuple(float(v) for v in m.groups())
+
+    @staticmethod
+    def _label_blocks(svg: str):
+        """从 SVG 解析标签块 (lx, ly, n_lines, half_w)；宽度按浏览器实际渲染的
+        反转义文本度量（&#x27; 等实体是单字符，不按字面计宽）。"""
+        import html as _h
+        blocks = []
+        for m in re.finditer(
+                r'<text class="elabel[^"]*" x="([\d.-]+)" y="([\d.-]+)"[^>]*>'
+                r"((?:<tspan[^>]*>[^<]*</tspan>)+)", svg):
+            x = float(m.group(1))
+            y0 = float(m.group(2))
+            n = m.group(3).count("<tspan")
+            text_lines = [_h.unescape(t) for t in
+                          re.findall(r"<tspan[^>]*>([^<]*)</tspan>", m.group(3))]
+            w = max(sum(10.0 if ord(ch) > 0x2E80 else 5.5 for ch in ln)
+                    for ln in text_lines) / 2 + 4.0
+            blocks.append((x, y0, n, w))
+        return blocks
+
+    @staticmethod
+    def _blocks_separated(a, b, margin=3.0):
+        """标签块（首行基线 -8 上沿 / 末行 +2 下沿；水平 ±half_w）二维不重叠。"""
+        ax, ay, an, aw = a
+        bx, by, bn, bw = b
+        a_top, a_bot = ay - 8, ay + 11 * (an - 1) + 2
+        b_top, b_bot = by - 8, by + 11 * (bn - 1) + 2
+        x_sep = (ax + aw + margin <= bx - bw) or (bx + bw + margin <= ax - aw)
+        y_sep = (a_bot + margin <= b_top) or (b_bot + margin <= a_top)
+        return x_sep or y_sep
 
     def test_multiline_label_blocks_do_not_overlap(self):
         """自包含两行回放：多行标签按实际占用排布——同列相邻标签块
@@ -322,40 +361,16 @@ class TestSvgRendering(unittest.TestCase):
                                        "ops": [op_a, op_b, op_c]})
         svg = render_svg(g)
         blocks = self._label_blocks(svg)
-        self.assertTrue(any(n >= 2 for _, _, n in blocks), "回放应含两行标签")
-        by_x = {}
-        for x, y0, n in blocks:
-            by_x.setdefault(x, []).append((y0, n))
-        worst = None
-        for items in by_x.values():
-            items.sort()
-            prev_bottom = None
-            for y0, n in items:
-                bottom = y0 + 11.0 * (n - 1)
-                if prev_bottom is not None:
-                    gap = y0 - prev_bottom
-                    if worst is None or gap < worst:
-                        worst = gap
-                prev_bottom = bottom
-        self.assertIsNotNone(worst)
-        self.assertGreaterEqual(worst, 12.9,
-                                f"多行标签块间距 {worst} < 13px（末行→首行）")
-        # 画布高度覆盖推让后的标签（不越出 SVG 高度）
-        view_h = float(re.search(r'viewBox="0 0 [\d.]+ ([\d.]+)"', svg).group(1))
-        max_bottom = max(y0 + 11.0 * (n - 1) for _, y0, n in blocks)
-        self.assertLessEqual(max_bottom + 4, view_h, "标签被推让后越出画布")
-
-    @staticmethod
-    def _label_blocks(svg: str):
-        blocks = []
-        for m in re.finditer(
-                r'<text class="elabel[^"]*" x="([\d.-]+)" y="([\d.-]+)"[^>]*>'
-                r"((?:<tspan[^>]*>[^<]*</tspan>)+)", svg):
-            x = float(m.group(1))
-            y0 = float(m.group(2))
-            n = m.group(3).count("<tspan")
-            blocks.append((x, y0, n))
-        return blocks
+        self.assertTrue(any(n >= 2 for _, _, n, _ in blocks), "回放应含两行标签")
+        # 纵向布局不变式：标签块两两 2D 不重叠（含 13px 块距语义）
+        for i in range(len(blocks)):
+            for j in range(i + 1, len(blocks)):
+                self.assertTrue(self._blocks_separated(blocks[i], blocks[j]),
+                                f"标签块互叠：{blocks[i]} vs {blocks[j]}")
+        # 画布高度覆盖全部标签（不越出 SVG 高度）
+        _vx, _vy, _vw, view_h = self._view_box(svg)
+        max_bottom = max(y0 + 11.0 * (n - 1) for _, y0, n, _ in blocks)
+        self.assertLessEqual(max_bottom + 4, _vy + view_h, "标签被推让后越出画布")
 
     def test_cross_column_label_occlusion_replay(self):
         """自包含跨列遮挡回放：长跨列边标签原中点落在中间节点矩形内时，
@@ -449,8 +464,7 @@ class TestSvgRendering(unittest.TestCase):
             r'<g class="dg-node [^"]*" transform="translate\(([\d.-]+),([\d.-]+)\)">'
             r'<rect width="172" height="([\d.]+)"', svg)]
         self.assertGreaterEqual(len(rects), 3)
-        view_w = float(re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).group(1))
-        view_h = float(re.search(r'viewBox="0 0 [\d.]+ ([\d.]+)"', svg).group(1))
+        view_w, view_h = self._view_box(svg)[2:]
         found = False
         for m in re.finditer(
                 r'<text class="elabel[^"]*" x="([\d.-]+)" y="([\d.-]+)"[^>]*>'
@@ -469,8 +483,8 @@ class TestSvgRendering(unittest.TestCase):
             for rx, ry, rh in rects:
                 ox = min(right, rx + 172) - max(left, rx)
                 oy = min(bot, ry + rh) - max(top, ry)
-                self.assertLessEqual(ox * oy, 0,
-                                     f"条件标签块与节点矩形相交 {ox}x{oy}")
+                self.assertTrue(ox <= 0 or oy <= 0,
+                                f"条件标签块与节点矩形相交 {ox}x{oy}")
             self.assertGreaterEqual(left, 0)
             self.assertLessEqual(right, view_w)
             self.assertLessEqual(bot + 4, view_h)
@@ -512,24 +526,16 @@ class TestSvgRendering(unittest.TestCase):
         html_text = render_decoder_page(doc).decode("utf-8")
         svgs = re.findall(r"<svg class=\"dg\".*?</svg>", html_text, re.S)
         self.assertGreater(len(svgs), 0)
-        worst = 999.0
         for svg in svgs:
-            view_h = float(re.search(r'viewBox="0 0 [\d.]+ ([\d.]+)"', svg).group(1))
-            by_x = {}
-            for x, y0, n in self._label_blocks(svg):
-                by_x.setdefault(x, []).append((y0, n))
+            _vx, _vy, _vw, view_h = self._view_box(svg)
+            blocks = self._label_blocks(svg)
+            for _, y0, n, _ in blocks:
                 self.assertLessEqual(y0 + 11.0 * (n - 1) + 4, view_h,
                                      "标签越出画布高度")
-            for items in by_x.values():
-                items.sort()
-                prev_bottom = None
-                for y0, n in items:
-                    bottom = y0 + 11.0 * (n - 1)
-                    if prev_bottom is not None:
-                        worst = min(worst, y0 - prev_bottom)
-                    prev_bottom = bottom
-        self.assertGreaterEqual(worst, 12.9,
-                                f"真实页最坏标签块间距 {worst} < 13px")
+            for i in range(len(blocks)):
+                for j in range(i + 1, len(blocks)):
+                    self.assertTrue(self._blocks_separated(blocks[i], blocks[j]),
+                                    f"标签块互叠：{blocks[i]} vs {blocks[j]}")
 
     def test_node_height_contains_text(self):
         """长标签节点高度大于短标签节点（文字不被裁切/重叠）。"""
@@ -975,6 +981,135 @@ class TestOnnxViewFix01(unittest.TestCase):
                                     f"暗主题 {kind} 对比不足")
         # 框字保持已认可对比（主行 ≥7）
         self.assertGreaterEqual(ratio("#1f2933", "#fcfdfe"), 7.0)
+
+
+class TestVerticalHierarchy(unittest.TestCase):
+    """用户反馈03：纵向自上而下主阅读 + 真实包含关系章节编号。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from structure_reader.extract.deepseek_v4_hf import build_reading_document
+        from structure_reader.render.decoder_page import render_decoder_page
+
+        cls.doc = build_reading_document(REPO_ROOT)
+        cls.html_text = render_decoder_page(cls.doc).decode("utf-8")
+
+    def test_cross_rank_edges_flow_downward(self):
+        """自包含 fixture：跨层边目标在源下方（纵向主阅读），文字横向（无旋转）。"""
+        phase = fixture_phase()
+        g = build_module_graph(phase, {"id": "v", "title": "v",
+                                       "ops": phase["operators"][:4]})
+        svg = render_svg(g)
+        self.assertNotIn("rotate(", svg, "不得旋转 SVG（文字须横向）")
+        # 跨层边：终点 y > 起点 y（自上而下）
+        for m in re.finditer(
+                r'<path class="dg-edge flow" d="M([\d.-]+),([\d.-]+) '
+                r"C[\d.-]+,[\d.-]+ [\d.-]+,[\d.-]+ ([\d.-]+),([\d.-]+)\"", svg):
+            self.assertGreater(float(m.group(4)), float(m.group(2)),
+                               "跨层边未自上而下")
+
+    def test_vertical_fixture_geometry_and_labels(self):
+        """自包含纵向回放：链+分叉汇合+残差+权重/圆点/IO+长名/条件边——
+        几何端点到达、标签完整、无旋转。"""
+        phase = fixture_phase()
+        g = build_module_graph(phase, {"id": "vf", "title": "f",
+                                       "ops": phase["operators"]})
+        svg = render_svg(g)
+        self.assertNotIn("rotate(", svg)
+        # 圆点/计算框都存在（IO 标识由真实文档测试覆盖：hidden_states）
+        self.assertIn("dg-dot", svg)
+        self.assertIn("dg-node op", svg)
+        # 条件+源码名同见
+        blocks = TestSvgRendering._label_blocks(svg)
+        self.assertTrue(any(n >= 2 for _, _, n, _ in blocks))
+        # 标签两两不重叠、不越界
+        view_h = float(re.search(r'viewBox="0 0 [\d.]+ ([\d.]+)"', svg).group(1))
+        for i in range(len(blocks)):
+            for j in range(i + 1, len(blocks)):
+                self.assertTrue(
+                    TestSvgRendering._blocks_separated(blocks[i], blocks[j]))
+        _vx, _vy, _vw, vh = TestSvgRendering._view_box(svg)
+        for _, y0, n, _ in blocks:
+            self.assertLessEqual(y0 + 11.0 * (n - 1) + 4, _vy + vh,
+                                 "标签越出画布（纵向原点口径）")
+
+    def test_section_tree_containment(self):
+        """章节树体现真实包含：Attention→CSA→Indexer 同前缀逐层深入；
+        编号来自树而非列表顺序（乱序输入不改变编号）。"""
+        from structure_reader.render.diagram import section_entries, section_number
+
+        entries = section_entries("prefill")
+        by_gid = {e["gid"]: e for e in entries if e["gid"]}
+        csa = by_gid["attn_csa"]
+        indexer = by_gid["attn_indexer"]
+        self.assertEqual(csa["number"], "1.2.4")
+        self.assertEqual(indexer["number"], "1.2.4.1")
+        self.assertTrue(indexer["number"].startswith(csa["number"] + "."))
+        self.assertEqual(indexer["parent_number"], csa["number"])
+        # 编号与列表顺序无关（乱序树输入）
+        import structure_reader.render.diagram as dg
+        old = dg._SECTION_TREE
+        try:
+            dg._SECTION_TREE = tuple(reversed(old))
+            self.assertEqual(section_number("attn_csa", "prefill"), "1.2.4")
+            self.assertEqual(section_number("attn_indexer", "prefill"), "1.2.4.1")
+        finally:
+            dg._SECTION_TREE = old
+        # Decode 用 2 前缀
+        self.assertEqual(section_number("attn_csa", "decode"), "2.2.4")
+
+    def test_same_target_same_number_everywhere(self):
+        """同一目标（CSA/Indexer/缓存通道）在总览导航、章节标题、目录中编号一致。"""
+        from structure_reader.render.diagram import section_number
+
+        for phase in self.doc["phases"]:
+            p = "1" if phase["id"] == "prefill" else "2"
+            for gid in ("attn_csa", "attn_indexer", "cache:main"):
+                num = section_number(gid, phase["id"])
+                self.assertIn(num, self.html_text)
+                # 总览导航框标签含该编号（nav label = 编号 + 标题）
+                self.assertGreaterEqual(self.html_text.count(f"{num} "), 1)
+        # 目录链接锚点全部存在（含父章节 sec- 锚点）
+        from html.parser import HTMLParser
+
+        class Links(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.ids = set()
+                self.links = []
+
+            def handle_starttag(self, tag, attrs):
+                a = dict(attrs)
+                if "id" in a:
+                    self.ids.add(a["id"])
+                if a.get("href", "").startswith("#"):
+                    self.links.append(a["href"][1:])
+        parser = Links()
+        parser.feed(self.html_text)
+        broken = sorted(set(parser.links) - parser.ids)
+        self.assertEqual(broken, [], f"悬空联查目标: {broken[:6]}")
+
+    def test_phase_sections_numbered(self):
+        """Prefill=1、Decode=2 根章；章节实际呈现顺序按编号数值层级
+        （先 x.1…x.6 再 x.7；缓存子图 7.1/7.2/7.3 不倒序）；缓存标题各自
+        具名关联（main→x.2.3、csa→x.2.4、indexer→x.2.4.1）。"""
+        self.assertIn("1 Prefill", self.html_text)
+        self.assertIn("2 Decode", self.html_text)
+        self.assertIn("1.2.4 CSA 压缩器", self.html_text)
+        self.assertIn("1.2.4.1 Lightning Indexer", self.html_text)
+        # 实际顺序：1.1 标题先于 1.7；1.6 先于 1.7；7.1 → 7.2 → 7.3
+        for pre, post in (
+                (">1.1 ", ">1.7 "), (">1.6 ", ">1.7 "),
+                (">2.6 ", ">2.7 "), (">1.7.1 ", ">1.7.2 "),
+                (">1.7.2 ", ">1.7.3 "), (">2.7.1 ", ">2.7.2 "),
+                (">2.7.2 ", ">2.7.3 ")):
+            self.assertLess(self.html_text.index(pre), self.html_text.index(post),
+                            f"章节呈现顺序错误：{pre} 应先于 {post}")
+        # 每个缓存子图各自具名关联
+        self.assertIn("（缓存附图，关联 1.2.3）", self.html_text)
+        self.assertIn("（缓存附图，关联 1.2.4）", self.html_text)
+        self.assertIn("（缓存附图，关联 1.2.4.1）", self.html_text)
+        self.assertIn("（缓存附图，关联 2.2.3）", self.html_text)
 
 
 if __name__ == "__main__":

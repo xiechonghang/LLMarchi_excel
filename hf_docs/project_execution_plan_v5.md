@@ -1,5 +1,7 @@
 # 模型结构阅读实施计划v5：Transformers实现与双阶段阅读
 
+2026-10-19最新 M1 阅读修订：用户认可 c97 图清晰度，按[反馈03](../structure_reader/docs/acceptance/hf_m1_reading_feedback03.md)新增上→下纵向结构图及真实模块包含关系的章节编号。原 GLM 仅修改 HTML 图布局/章节导航，Codex 核新候选后原 DeepSeek 做受影响展示复验；Qwen 保持空闲。保留 JSON/Excel/粒度与现有正确图义，M2/M3 等 M1 最终阅读明确确认。
+
 2026-10-18最新M1阅读修订：按用户[反馈02](../structure_reader/docs/acceptance/hf_m1_reading_feedback02.md)，原OpenCode GLM仅改HTML图示文字对比度和ONNX式“算子框+张量/权重箭头”语义，采用源码名称和shape，保留粒度及JSON/Excel事实。Codex先核新候选后原DeepSeek做受影响展示复验；Qwen空闲。旧5411图示工程记录保留，不代替本次用户阅读要求。M2/M3继续等M1用户明确确认。
 
 更新：2026-10-17。状态：需求范围不变；用户已停止旧任务，执行统一迁至VS Code可见OpenCode：GLM主干、Qwen独立Excel、DeepSeek独立验证。M1首版尚未认可，现接续已保存修复和成果，不从零开发。每15分钟检查保持ACTIVE。
