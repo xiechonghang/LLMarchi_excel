@@ -30,9 +30,6 @@ from structure_reader.render.diagram import (
     legend_html,
     module_groups,
     render_svg,
-    section_entries,
-    section_number,
-    section_title,
 )
 
 __all__ = ["render_decoder_page", "DecoderPageError"]
@@ -105,32 +102,10 @@ def _render_phase(phase: dict) -> str:
     param_index = {p["id"]: p for p in params}
 
     out = [f'<section class="phase" id="phase-{html.escape(pid)}">']
-    phase_num = "1" if pid == "prefill" else "2"
     out.append(
         f'<h2><span class="phase-badge {"badge-prefill" if pid == "prefill" else "badge-decode"}">'
-        f'{phase_num}</span> {phase_num} {html.escape(label)} — '
-        f'{html.escape(str(phase.get("title", "")))}</h2>'
+        f'{html.escape(label)}</span> {html.escape(str(phase.get("title", "")))}</h2>'
     )
-
-    # ---- 章节目录（真实包含关系：编号树 + 父子链接）----
-    entries = section_entries(pid)
-    out.append('<div class="card"><h3>章节目录（编号 = 真实包含关系；'
-               "Attention → CSA 压缩器 → Lightning Indexer 逐层深入）</h3><ul class=\"toc\">")
-    for e in entries:
-        depth = e["number"].count(".") - 1
-        indent = "&nbsp;" * (depth * 4)
-        parent_note = (f"（父章节 {e['parent_number']}）"
-                       if e["parent_number"] and e["gid"] else "")
-        out.append(
-            f'<li class="toc-d{depth}">{indent}'
-            f'<a class="param-link mono" href="#{html.escape(e["anchor"])}">'
-            f'{html.escape(e["number"])}</a> {html.escape(e["title"])}{parent_note}</li>')
-    out.append("</ul>"
-               '<p class="dg-note">编号依据源码包含关系：DeepseekV4Attention :794-795 '
-               "self.compressor 创建所选 CSA 压缩器；DeepseekV4CSACompressor :618 "
-               "self.indexer 创建并 :690 调用 Lightning Indexer；attn_hc/ffn_hc/"
-               "双 RMSNorm 为 DeepseekV4DecoderLayer :1154-1159 的子模块。"
-               "缓存附图（x.7）为辅助阅读图，注明所关联的计算章节。</p></div>")
 
     # ---- 结构图（展示层；边全部来自本文档 operators/tensors 真实引用）----
     # ONNX 式阅读语义：计算框=源码算子名+计算类型；tensor/权重/缓存状态=箭头上
@@ -143,54 +118,25 @@ def _render_phase(phase: dict) -> str:
                "点击跳转到下方「模块详细连接图」查看实际计算框；"
                "聚合边可追溯到原始算子/张量（悬停查看张量清单）。</p></div>")
 
-    module_graphs = [(g, build_module_graph(phase, g)) for g in module_groups(phase)]
-    out.append('<div class="card"><h3>模块详细计算图（计算框=源码算子+类型；'
-               "tensor/权重=箭头上的源码名+shape）</h3>")
-    last_parent = None
-    for g, graph in module_graphs:
-        num = section_number(g["id"], pid)
-        entry = next((x for x in entries if x["gid"] == g["id"]), None)
-        parent = entry["parent"] if entry else None
-        if parent is not None and parent["gid"] is None and parent["number"] != last_parent:
-            last_parent = parent["number"]
-            out.append(f'<h3 id="sec-{html.escape(pid)}-'
-                       f'{html.escape(parent["number"].replace(".", "-"))}">'
-                       f'{html.escape(parent["number"])} {html.escape(parent["title"])}</h3>')
-        if parent is not None:
-            p_anchor = (parent["anchor"] if parent["gid"]
-                        else f"sec-{html.escape(pid)}-"
-                             f'{html.escape(parent["number"].replace(".", "-"))}')
-            crumb = (f'<div class="crumb">父章节：'
-                     f'<a class="param-link" href="#{p_anchor}">'
-                     f'{html.escape(parent["number"])} {html.escape(parent["title"])}</a>'
-                     f' ← {phase_num} {html.escape(label)}</div>')
-        else:
-            crumb = ""
-        out.append(f'<h4 id="mod-{html.escape(pid)}-{html.escape(g["id"])}">'
-                   f'{html.escape(num)} {html.escape(g["title"])}</h4>{crumb}')
-        out.append('<div class="diagram-scroll">' + render_svg(graph) + "</div>")
-    out.append(legend_html())
-
-    # 缓存附图（x.7）：按编号数值顺序 7.1/7.2/7.3，各自注明关联计算章节
     cache_graphs = build_cache_graphs(phase)
     if cache_graphs:
-        links = {"main": f"{phase_num}.2.3", "csa": f"{phase_num}.2.4",
-                 "indexer": f"{phase_num}.2.4.1"}
-        order = {"main": 0, "csa": 1, "indexer": 2}
-        cache_graphs = sorted(cache_graphs, key=lambda x: order[x["id"]])
-        out.append('<div class="card">'
-                   f'<h3 id="sec-{html.escape(pid)}-{phase_num}-7">'
-                   f'{phase_num}.7 缓存附图（调用前历史 → 本次算子读写 → 调用后回写）</h3>')
+        out.append('<div class="card"><h3>缓存读写图（调用前历史 → 本次算子读写 → 调用后回写）</h3>')
         for g in cache_graphs:
-            num = section_number(f"cache:{g['id']}", pid)
-            out.append(f'<h4 id="{html.escape(g["anchor"])}">'
-                       f'{html.escape(num)} {html.escape(g["title"])}'
-                       f'（缓存附图，关联 {links[g["id"]]}）</h4>')
+            out.append(f'<h4 id="{html.escape(g["anchor"])}">{html.escape(g["title"])}</h4>')
             out.append('<div class="diagram-scroll">' + render_svg(g) + "</div>")
         out.append(legend_html())
         out.append('<p class="dg-note">缓存状态为端口圆点（时序角色与源码名/shape 在箭头上）；'
                    "标注「仅 N_win&gt;0」的条件更新只在闭窗调用发生，无闭窗时状态保留"
                    "（与算子卡片 note 一致）；「下游算子」端口联查消费该读视图的原算子卡片。</p></div>")
+
+    module_graphs = [(g, build_module_graph(phase, g)) for g in module_groups(phase)]
+    out.append('<div class="card"><h3>模块详细计算图（计算框=源码算子+类型；'
+               "tensor/权重=箭头上的源码名+shape）</h3>")
+    for g, graph in module_graphs:
+        out.append(f'<h4 id="mod-{html.escape(pid)}-{html.escape(g["id"])}">'
+                   f'{html.escape(g["title"])}</h4>')
+        out.append('<div class="diagram-scroll">' + render_svg(graph) + "</div>")
+    out.append(legend_html())
     out.append('<p class="dg-note">计算框=真实算子（源码调用名+计算类型，复合算子如实列出），'
                "点击联查算子卡片；箭头上的 tensor 标注源码变量/表达式名与符号 shape，"
                "点击联查张量索引；权重为虚线引用。同名源码变量按图内步骤消歧"
