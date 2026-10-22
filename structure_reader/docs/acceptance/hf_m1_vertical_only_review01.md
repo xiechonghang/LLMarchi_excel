@@ -1,0 +1,11 @@
+# 反馈04纵向-only初版复核01：仅标签与自己箭头的关联仍需收尾
+
+候选301770836a89ada189b584dd9480ce0f2d25822ce9d98dfc28c31932ddc4c3c3。结论changes_required，仅具名方向标签位置遗漏；不新增需求或章节目标。
+
+已核非SVG HTML与c97逐字节相同；44图各节点内部SVG markup、框宽高/字体文字与c97相同，全部边可见文字相同；decoder_page及diagram_css/_node_lines/_node_sub_lines/_node_height逐字节恢复。相对dfb9612只有_layout说明与render_svg方向几何改变。三数据同、112旧候选保护同、manifest交付/13工具源吻合。原GLM两实际build同301/第二次reused，43图+44页原始rc0，未重复构建。复用真实端点→JSON期望，42模块/cache548方向0缺/多/未定位，主链无上行；44图可见文字/条件/配色静态检查0issue、标签互叠/越界0。2导航单列，不计548。
+
+仍不能认可展示：横向推让标签但箭头不跟随，走廊一致不能证明标签在自己线上。实际专家图up标签块x1310.25…1378.75，自己箭头x恒102，最近距离至少1208.25px；gate同类847.75px；indexer cache new_gate同类812px；导航c_block_bias同类1171px。两阶段均出现。label_path_spot.json按实际path与顺序一一对应label（每图数量先断言相同）有限采样作范围度量，不代表通用浏览器视觉；94只是同类偏移范围不拆任务。旧c97对照最差51px，仅对照不追溯改旧版。
+
+已回原GLM同模型做opencode_glm_vertical_only_fix01.md有限几何收尾（SHA68bee89eb2fd112492c0e626c83122df5166e0f91c5e9c345ceec5c21b966631）。保持样式/页面/文本/数据和正确方向；允许方向转换所需留白与本条曲线和标签同步，拒绝游离标签/dg-leader/截断。119旧产物保护含301。暂不派DeepSeek独立复验。
+
+证据：.work/coordination/hf_m1/codex_vertical_only_review01/{baseline_result,replay_result,label_path_spot,fix_dispatch}.json、product_diff.patch，GLM日志logs/opencode_glm_vertical_only01_*。工程未最终通过，browser_visual=blocked/not_verified，用户阅读pending，M1未最终确认，M2/M3未启。

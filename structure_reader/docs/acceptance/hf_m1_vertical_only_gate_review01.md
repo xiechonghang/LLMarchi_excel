@@ -1,0 +1,29 @@
+# 反馈04最终展示静态工程复核：恢复c97，仅横向→纵向
+
+结论：display_static_engineering=passed。当前固定候选e007491617ddae374cb571b6a7e3a75d530a510519a1ed7a5ca647fa47e2fb24。本轮用户要求已形成可读交付；真实浏览器/用户阅读分别保留未核验，不代签M1整体阅读。
+
+阅读入口：[纵向HTML](/Users/xiechonghang/Workspace/LLMarchi_excel/structure_reader/outputs/deepseek_v4_flash_0731_hf/e007491617ddae374cb571b6a7e3a75d530a510519a1ed7a5ca647fa47e2fb24/viewer/decoder.html)。Excel与用户原认可内容逐字节相同，不需为本轮重新审查模型或Excel。
+
+## 实际改动与保留
+
+以用户认可清晰度的c97/dfb9612为基线。decoder_page.py逐字节恢复；实际非SVG HTML逐字节相同，页面内容与顺序保持。44图所有节点内部SVG markup、框宽高/字色字号/名称/计算类型与c97相同，628条边可见源码名/shape/条件全文与c97相同。diagram_css/_node_lines/_node_sub_lines/_node_height保持原字节。相对dfb9612仅_layout文档说明与render_svg方向几何改变，另有受影响图测试断言适配。
+
+主数据流改为上→下，文字仍横向；圈点/IO/框真实锚点与marker按纵向连接。章节编号/新目录/面包屑/cache章节重排/dg-leader均撤回。没有改变模型数据、算子粒度、命名、Excel或清理冗余。
+
+## 有限验证证据
+
+原GLM两实际build rc0同e007，第二次reused；原始argv/cwd/rc已核，没有重复CLI构建。Codex受影响43图+44页面复跑rc0，纯构建7文件当前字节与本候选全等、13工具源匹配，三数据与c97逐字节一致，126旧候选交付保护无变化。
+
+DeepSeek原Terminal22同模型正常完成vertical_only_gate/round01。Codex读实际小adapter/8有限例/原始日志并复跑8例和固定候选检查均rc0。独立沿实际四向端点→JSON producer-consumer期望，42模块/cache548条缺/多/反向/未定位均0；Codex另复用严格锚点确认168条计算→计算均源底→目标顶向下。2导航总览仅端点单列，不计548。44图整块文字/节点边界估算及互叠0，628路径控制点都在真实viewBox内；2212链接无断、132marker唯一闭合。
+
+本轮1208px直线标签漂离及217px斜线标签漂离已由最终位置沿自己曲线更新关闭。Codex ET遍历628条实际边/可见标签，每图先断言数量相同再按渲染原序配对；对自己曲线加密采样及单调轴文字块边/中心反解。624块距本条曲线≤20px，余4为两阶段cache下游相邻注记，块边距离34px；独立按文字中心度量为49px。这是不同几何口径，不能称全部标签压在线上，也不据少量相邻注记新增布局任务。真实字体/观感仍待用户阅读。
+
+107冻结/126旧保护当前全部实际文件存在，逐文件SHA与freeze一致，当前原始向量已保存在Codex证据result.json。独立begin/end是含对freeze比较结果的诊断报告（相等），不是逐项原始SHA向量；不混称该覆盖。两新检查SHA与独立报告一致：d345daec17d0860b6f2426c13f278399c1053299e2df34e4a5ffdae4f8c7097a / 5d93465e3c9431b7df0d94057e468aca74fbd03e3ac221ade768eb7e4dd5aadf。
+
+## 覆盖校正与边界
+
+独立报告把标签配对称ET，实际adapter为不依赖href的有序regex，当前628单C路径全覆盖；Codex另以ET完整配对补足。独立节点签名只核尺寸和文字，Codex实际内部markup逐字节比较补足样式属性。独立label_own_curve在adapter中是warning，8例中距离断言证明能检测大偏移，不宣称完整gate会自动拒绝所有此类图；Codex已直接审查当前628绑定，另有限内存验证真实已解析边反向/错终点、实际c97横向主链及真实up标签+1208px均能检测。原报告/旧checker保持只读，不擦历史，不再为覆盖措辞缺口重复派单或建设框架。
+
+browser_visual=blocked/not_verified；native_excel=not_verified；user_reading=pending。静态SVG/CSS/字宽估算不等真实浏览器字体/滚动/点击，未用服务/换浏览器/协议/CDP绕过file限制。M1整体仍需用户明确阅读确认，M2/M3未启。
+
+证据：.work/coordination/hf_m1/vertical_only_gate/round01/，codex_vertical_only_gate_review01/，codex_vertical_only_review01/。三个OpenCode角色完成等待，只新阅读反馈/实际新错误或产品意外变更才继续对应角色；自动检查保持原PAUSED。
