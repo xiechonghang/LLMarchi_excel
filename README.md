@@ -1,29 +1,82 @@
-# 模型结构阅读工作区
+# LLMarchi_excel — 模型结构阅读工具
 
-当前目标：以Hugging Face Transformers模型源码和对应HF `config.json`为依据，生成能够读懂算子连接、参数、维度及KVCache的离线HTML与Excel。逐模型适配，Skill作为入口。
+从 Hugging Face Transformers 源码和模型配置静态分析 DeepSeek-V4，生成离线 HTML 结构图、算子流、源码定位、Prefill/Decode 两表 Excel，以及可选的模块级 ONNX/onnxsim 图。当前提供第 4 层的 HF decoder 样板：Attention、CSA/Indexer、KV cache、TopK MoE 与 mHC。
 
-当前先做DeepSeek HF decoder阅读样板：Attention（含KVCache）、MoE和mHC；完整Prefill在前、完整Decode在后。Excel只有两张自包含工作表。最终补齐配置实际使用的结构变体和粗粒度整网至logits；不分析训练、采样或设备优化执行。
+工具不加载权重、不导入或运行 HF 模型。ONNX 是依据源码与配置构建的结构图，权重作为图输入，不代表已验证 HF 数值等价。其他层型和整网分析仍在计划中。
 
-## 当前接续入口
+## 克隆与安装
 
-1. [已确认需求](structure_reader/docs/requirements_alignment_2026_10_17.md)。
-2. [既有代码复用核查](structure_reader/docs/hf_reuse_audit_2026_10_17.md)：直接保留、适配与退出当前范围的资产。
-3. [实施计划v5](hf_docs/project_execution_plan_v5.md)：替换旧V1/V2/V3和B4主线。
-4. [最新实际进度](structure_reader/docs/progress.md)：只读顶部当前状态，旧条目保留历史。
+需要 Git、Python 3.11 或更高版本。以下命令从仓库根目录运行；Windows 可使用 Git Bash，或将虚拟环境激活命令改为 `.venv\Scripts\activate`。
 
-## 现在实际有什么
+```bash
+git clone https://github.com/xiechonghang/LLMarchi_excel.git
+cd LLMarchi_excel
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e './structure_reader[xlsx]'
+python structure_reader/scripts/read_model_structure.py --help
+```
 
-既有工程已实现参考推理源码的输入扫描、结构图、离线页面、CSV和DSpark集成；这些成果的依据是模型仓库的`inference/model.py`，HF源码此前只是对照输入。**它们不能直接当作新需求的HF实现结果。**
+## 准备分析输入（不下载权重）
 
-当前已完成新需求确认、代码复用核查和重规划；新HF提取器、双阶段页面、两表.xlsx和Skill尚未交付。下一包为真实HF decoder样板闭环，不再先补旧DSpark门禁。已有命令及历史能力见[工程README](structure_reader/README.md)。
+第三方源码和模型资料不打包进本仓库。为保证源码行号与分析结论一致，当前适配固定到以下版本，不能直接换成上游最新版：
 
-## 目录与版本保护
+```bash
+mkdir -p hflib
+git clone --filter=blob:none --no-checkout https://github.com/huggingface/transformers.git hflib/transformers
+git -C hflib/transformers checkout --detach 536ecc007387a50e77603bb5d92100e9b07514cc
 
-- `structure_reader/src/`、`tests/`、`configs/`、`scripts/`：产品、测试、输入注册及入口。
-- `structure_reader/docs/`：当前需求、复用核查、进度与工程说明。
-- `hf_docs/`：新计划及背景资料；v3/v4和旧说明书已标为历史。
-- `models/`、`hflib/`：只读模型资料和第三方源码输入，Git忽略，禁止用修改输入修工程。
-- `structure_reader/outputs/`：生成产物与历史候选，Git忽略，原有内容保留。
-- `structure_reader/.work/`：工作暂存与历史协调记录，Git忽略；目前含唯一历史验收证据，不能整体当成可丢弃目录清理。
+python scripts/download_hf_model.py \
+  -m deepseek-ai/DeepSeek-V4-Flash-0731 \
+  --revision 7872f01b1d1fe23eabc4c98b48bffcef5a386062 \
+  --endpoint https://huggingface.co
+```
 
-已建立本地Git跟踪源码、测试、配置、文档；未配置远程仓库。本轮重规划不删除旧代码、候选或证据，不恢复用户已删除的根文档。新正式验收结论按v5保存为可跟踪文档，不再只放在`.work`。
+下载脚本默认跳过权重，请不要加 `-w`。Transformers 检出仅作为文本输入，不需要安装 Transformers、PyTorch 或模型运行环境。当前 HF 构建实际消费根 `config.json` 和六个 Transformers 源文件，并校验其 SHA256；来源缺失或漂移会明确报错，不会沿用旧结论。
+
+## 生成 HTML 与 Excel
+
+```bash
+python structure_reader/scripts/read_model_structure.py build-hf \
+  --model deepseek_v4_flash_0731_hf --layer-index 4
+```
+
+命令会打印本次输出目录及 HTML 入口。主要结果位于 `structure_reader/outputs/deepseek_v4_flash_0731_hf/<analysis_id>/`：
+
+- `viewer/decoder.html`：离线阅读页，包含纵向结构图、模块包含关系、算子流与源码定位。
+- `tables/decoder_reading.xlsx`：Prefill、Decode 两张工作表。
+- `data/reading_document.json`、`data/effective_config.json`：页面与表格所用的数据和有效配置。
+- `reports/source_manifest.json`、`run_manifest.json`：输入、工具与交付文件身份。
+
+相同输入、工具源码与依赖生成相同内容身份；已有结果会复用，旧候选不会覆盖。
+
+## 可选：ONNX 与 Netron
+
+在上述虚拟环境安装 ONNX 工具，再增加 `--onnx`：
+
+```bash
+python -m pip install onnx onnxsim onnxruntime
+python structure_reader/scripts/read_model_structure.py build-hf \
+  --model deepseek_v4_flash_0731_hf --layer-index 4 --onnx
+```
+
+输出包含两阶段共 36 个模块的原始和简化 ONNX、名称映射及检查报告；依赖版本参与输出身份。可以在本机 Netron 中直接选择生成的 `.onnx` 文件打开。
+
+HTML 的一键打开本地 Netron 链接需要注册项目启动器，当前仅支持 macOS。安装 Netron 与 Xcode Command Line Tools 后，在仓库根执行：
+
+```bash
+bash structure_reader/tools/netron_launcher/setup.sh register --yes
+```
+
+这会构建项目内启动器并注册 `llmarchi-netron` URL 协议。浏览器可能询问是否允许打开本地应用；未注册启动器、其他系统或浏览器不支持此协议时，请从 Netron 手动打开 ONNX。HTML/Excel 的生成与阅读不依赖启动器。
+
+## 开发与项目资料
+
+源码、配置、测试与文档直接保存在默认分支，可正常 `git clone` 使用。`models/`、`hflib/`、虚拟环境、生成结果与本机协调记录由 `.gitignore` 排除；克隆后按上面步骤准备输入并重新构建，不需要历史备份归档。
+
+- [已确认需求](structure_reader/docs/requirements_alignment_2026_10_17.md)
+- [实施计划 v5](hf_docs/project_execution_plan_v5.md)
+- [当前进度与验收边界](structure_reader/docs/progress.md)
+- [工程说明与旧参考实现](structure_reader/README.md)
+
+`build-hf` 是当前 HF decoder 入口。旧 `inspect` / `build` 参考实现与 DSpark 路径保留供历史研究，不能替代当前 HF 阅读结果；部分旧集成测试依赖本机历史产物，不能将全仓测试视为干净克隆的安装检查。

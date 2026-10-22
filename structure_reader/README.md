@@ -1,4 +1,4 @@
-> **当前主线已更新（2026-10-17）。** 用户已确认以Transformers源码和HF config.json为依据，先交DeepSeek HF decoder的Attention/KVCache、MoE、mHC双阶段样板，配离线HTML和Prefill/Decode两表Excel。见[需求书](docs/requirements_alignment_2026_10_17.md)、[代码复用核查](docs/hf_reuse_audit_2026_10_17.md)、[实施计划v5](../hf_docs/project_execution_plan_v5.md)。**新HF适配、页面和Excel尚未实现；下文已有命令与四图/DSpark能力属于旧参考实现，不是HF结构交付。**
+> **当前入口（2026-10-22）：** HF decoder 的 HTML、两表 Excel、模块级 ONNX/onnxsim 及本地 Netron 链接已实现，入口为 `build-hf --model deepseek_v4_flash_0731_hf --layer-index 4`。克隆、依赖安装、固定版本输入准备与运行步骤见[根目录 README](../README.md)。M1 整体用户阅读确认仍待完成。下文保留旧 `inspect` / `build` 参考实现与 DSpark 说明，不是当前 HF 路径的快速开始。
 
 # structure_reader
 
