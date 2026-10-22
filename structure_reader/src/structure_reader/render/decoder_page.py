@@ -24,6 +24,7 @@ from pathlib import Path
 
 from structure_reader.render.diagram import (
     build_cache_graphs,
+    build_csa_composite_graph,
     build_module_graph,
     build_overview_graph,
     diagram_css,
@@ -49,8 +50,20 @@ class DecoderPageError(ValueError):
     """渲染失败（文档缺字段/阶段顺序错误），具名拒绝。"""
 
 
-def render_decoder_page(reading_document: dict) -> bytes:
-    """reading_document → 单文件离线 HTML 字节（UTF-8）。"""
+def render_decoder_page(reading_document: dict,
+                        source_snapshot: dict[str, str] | None = None,
+                        onnx_bundle: dict | None = None,
+                        candidate_id: str | None = None) -> bytes:
+    """reading_document → 单文件离线 HTML 字节（UTF-8）。
+
+    source_snapshot: {相对路径: 完整源码文本}，由 build 层从已分析本地 HF 检出
+    读取传入（只读既有 SOURCE_FILES 清单内文件）；渲染层不做文件 I/O。
+    None 时源码面板如实显示"快照不可用"。
+
+    onnx_bundle: {phase: {module: {display, details, state, base}}}，由 build 层
+    在显式 ONNX 选项中从真实 ModelProto 生成；None 时不显示入口（保持旧能力）。
+    candidate_id: 实际 analysis_id，用于生成本地 Netron 链接；None 时不出链接。
+    """
     if not isinstance(reading_document, dict):
         raise DecoderPageError("reading_document 必须是 dict")
     if reading_document.get("schema") != "hf_decoder_reading.v1":
@@ -81,7 +94,8 @@ def render_decoder_page(reading_document: dict) -> bytes:
         diagram_css=diagram_css(),
     ))
     for phase in phases:
-        parts.append(_render_phase(phase))
+        parts.append(_render_phase(phase, source_snapshot=source_snapshot,
+                                   onnx_bundle=onnx_bundle, candidate_id=candidate_id))
     parts.append(_PAGE_FOOT)
     payload = "\n".join(parts).encode("utf-8")
     return payload
@@ -92,7 +106,34 @@ def render_decoder_page(reading_document: dict) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def _render_phase(phase: dict) -> str:
+def _source_snapshot_lines(
+    path: str, locator: str,
+    snapshot: dict[str, str] | None,
+) -> str | None:
+    """从快照提取 locator 所指的源码行段；不可用时 None（诚实显示）。"""
+    if not snapshot or path not in snapshot:
+        return None
+    text = snapshot[path]
+    lines = text.split("\n")
+    # locator 解析：支持 "123"、"123-456"、"123/456"、"123:456"、
+    # 多段 "1177-1179/1183-1185"（提取所有数字对的最大范围）
+    import re as _re
+    if not locator:
+        return "\n".join(f"{k+1:5d} │ {ln}" for k, ln in enumerate(lines[:80]))
+    nums = [int(x) for x in _re.findall(r"\d+", locator)]
+    if not nums:
+        return "\n".join(f"{k+1:5d} │ {ln}" for k, ln in enumerate(lines[:80]))
+    lo = min(nums)
+    hi = max(nums)
+    start = max(1, lo - 3)
+    end = min(len(lines), hi + 5)
+    sel = lines[start - 1:end]
+    return "\n".join(f"{start + k:5d} │ {ln}" for k, ln in enumerate(sel))
+
+
+def _render_phase(phase: dict, source_snapshot: dict[str, str] | None = None,
+                  onnx_bundle: dict | None = None,
+                  candidate_id: str | None = None) -> str:
     pid = phase.get("id", "")
     label = _PHASE_LABELS.get(pid, pid)
     params = phase.get("parameters", [])
@@ -107,52 +148,11 @@ def _render_phase(phase: dict) -> str:
         f'{html.escape(label)}</span> {html.escape(str(phase.get("title", "")))}</h2>'
     )
 
-    # ---- 结构图（展示层；边全部来自本文档 operators/tensors 真实引用）----
-    # ONNX 式阅读语义：计算框=源码算子名+计算类型；tensor/权重/缓存状态=箭头上
-    # 的源码名+shape（端口圆点）；总览为模块导航（虚线框，非计算算子）。
-    out.append('<div class="card"><h3>Decoder 结构总览（模块导航：分支/残差/汇合 + 缓存通道）</h3>')
-    out.append('<div class="diagram-scroll">' +
-               render_svg(build_overview_graph(phase)) + "</div>")
-    out.append(legend_html())
-    out.append('<p class="dg-note">本图为<b>模块导航</b>（虚线框，非计算算子），'
-               "点击跳转到下方「模块详细连接图」查看实际计算框；"
-               "聚合边可追溯到原始算子/张量（悬停查看张量清单）。</p></div>")
-
-    cache_graphs = build_cache_graphs(phase)
-    if cache_graphs:
-        out.append('<div class="card"><h3>缓存读写图（调用前历史 → 本次算子读写 → 调用后回写）</h3>')
-        for g in cache_graphs:
-            out.append(f'<h4 id="{html.escape(g["anchor"])}">{html.escape(g["title"])}</h4>')
-            out.append('<div class="diagram-scroll">' + render_svg(g) + "</div>")
-        out.append(legend_html())
-        out.append('<p class="dg-note">缓存状态为端口圆点（时序角色与源码名/shape 在箭头上）；'
-                   "标注「仅 N_win&gt;0」的条件更新只在闭窗调用发生，无闭窗时状态保留"
-                   "（与算子卡片 note 一致）；「下游算子」端口联查消费该读视图的原算子卡片。</p></div>")
-
-    module_graphs = [(g, build_module_graph(phase, g)) for g in module_groups(phase)]
-    out.append('<div class="card"><h3>模块详细计算图（计算框=源码算子+类型；'
-               "tensor/权重=箭头上的源码名+shape）</h3>")
-    for g, graph in module_graphs:
-        out.append(f'<h4 id="mod-{html.escape(pid)}-{html.escape(g["id"])}">'
-                   f'{html.escape(g["title"])}</h4>')
-        out.append('<div class="diagram-scroll">' + render_svg(graph) + "</div>")
-    out.append(legend_html())
-    out.append('<p class="dg-note">计算框=真实算子（源码调用名+计算类型，复合算子如实列出），'
-               "点击联查算子卡片；箭头上的 tensor 标注源码变量/表达式名与符号 shape，"
-               "点击联查张量索引；权重为虚线引用。同名源码变量按图内步骤消歧"
-               "（HF 源码逐步重赋值，悬停见源码行号）；专家模板仍只有一份（不复制 E 份）。</p></div>")
-
-    # 缓存注记
-    cache_notes = phase.get("cache_notes", [])
-    if cache_notes:
-        out.append('<div class="card"><h3>缓存状态与读写（本阶段）</h3><ul>')
-        out.extend(f"<li>{html.escape(str(n))}</li>" for n in cache_notes)
-        out.append("</ul></div>")
-
     # 参数区
     out.append('<div class="card"><h3>参数符号区</h3>')
     out.append(
-        "<table class=\"params\"><thead><tr><th>参数id</th><th>符号</th><th>含义</th>"
+        "<div class=\"table-scroll\"><table class=\"params\">"
+        "<thead><tr><th>参数id</th><th>符号</th><th>含义</th>"
         "<th>值</th><th>表达式</th><th>来源</th><th>说明</th></tr></thead><tbody>"
     )
     for p in params:
@@ -176,7 +176,86 @@ def _render_phase(phase: dict) -> str:
             f'<td class="src">{sources}</td>'
             f"<td>{html.escape(str(p.get('note', '')))}</td></tr>"
         )
-    out.append("</tbody></table></div>")
+    out.append("</tbody></table></div></div>")
+    # ---- 结构图（展示层；边全部来自本文档 operators/tensors 真实引用）----
+    # ONNX 式阅读语义：计算框=源码算子名+计算类型；tensor/权重/缓存状态=箭头上
+    # 的源码名+shape（端口圆点）；总览为模块导航（虚线框，非计算算子）。
+    out.append('<div class="card"><h3>Decoder 结构总览（并列支路横向展开 + 真实包含边界 + 缓存载体）</h3>')
+    out.append('<div class="diagram-scroll">' +
+               render_svg(build_overview_graph(phase)) + "</div>")
+    out.append(legend_html())
+    out.append('<p class="dg-note">本图为<b>模块导航</b>（虚线框，非计算算子）：'
+               "层=自上而下的真实主数据流，层内横向并列的是真实并行支路（Q / 共享 KV / "
+               "CSA→Indexer），不串成顺序；<b>容器边界</b>表示真实包含关系"
+               "（Attention ⊃ CSA Compressor ⊃ Lightning Indexer）；"
+               "<b>持久状态存储</b>框是同一 past_key_values.layers[layer_idx] 载体，"
+               "读前态/写后态接入对应模块；跨多层的残差/来源类长连接用少量"
+               "<b>成对同名接口</b>（▸ 名称 / 名称 ▸，各自写明来源与去向），"
+               "避免长线互相压盖。点击模块框跳到下方详图；悬停边可看原始张量清单。</p></div>")
+
+
+
+    # 配置选择（COMPRESSOR_CLASSES :745-749; :794-795 实例化）
+    out.append('<div class="card"><h3>压缩器配置选择（COMPRESSOR_CLASSES[config.layer_types[layer_idx]]）</h3>')
+    out.append('<p>源码 :745-749 定义三种映射；:794-795 <code>self.compressor = COMPRESSOR_CLASSES[self.layer_type](config)</code>。'
+               '当前 layer_idx=4 的 <code>config.layer_types[4]="compressed_sparse_attention"</code> → 选中 <b>CSA</b>。</p>')
+    out.append('<div class="table-scroll"><table class="params"><thead><tr><th>映射键</th><th>压缩器</th><th>Indexer</th><th>本样板状态</th></tr></thead><tbody>'
+               '<tr><td class="mono">compressed_sparse_attention</td><td class="mono">DeepseekV4CSACompressor</td>'
+               '<td class="mono">有（self.indexer，:618）</td><td><b>✓ 当前生效（layer 4）</b>，下方 CSA / Indexer 模块图 详细展开</td></tr>'
+               '<tr><td class="mono">heavily_compressed_attention</td><td class="mono">DeepseekV4HCACompressor</td>'
+               '<td>无</td><td>配置可选，本样板未展开</td></tr>'
+               '<tr><td class="mono">sliding_attention</td><td>None（无压缩器）</td>'
+               '<td>无</td><td>配置可选（layer 0/1 为 SWA），本样板未展开</td></tr>'
+               '</tbody></table></div>'
+               '<p class="dg-note">选择边界/控制选择是展示注记，不混作实际 tensor 流。'
+               '未展开变体的完整通路后续按需提取，本页不伪装已实现。</p></div>')
+
+    groups = module_groups(phase)
+    by_id = {g["id"]: g for g in groups}
+    out.append('<div class="card"><h3>模块详细计算图（计算框=源码算子+类型；'
+               "tensor/权重=箭头上的源码名+shape；容器=真实包含边界）</h3>")
+    if onnx_bundle:
+        out.append('<p class="onnx-note onnx-global-note">ONNX 说明：点击“用本地 Netron 打开”会'
+                   "唤起本机 Netron 并载入该候选的真实简化 ONNX（本地链接，不经网页）；"
+                   "图为 <b>FP32 阅读特化图</b>（无真实权重，不是量化模型的数值等价图）。</p>")
+    for g in groups:
+        if g["id"] == "attn_indexer":
+            # Indexer 不再作为平级章节：它已作为 CSA 的嵌套子容器画在下面。
+            continue
+        if g["id"] == "attn_csa" and "attn_indexer" in by_id:
+            graph = build_csa_composite_graph(phase, g, by_id["attn_indexer"])
+            heading = "CSA 压缩器（包含 Lightning Indexer）"
+            out.append(f'<span class="anchor-mark" id="mod-{html.escape(pid)}-attn_indexer"></span>')
+        else:
+            graph = build_module_graph(phase, g)
+            heading = g["title"]
+        out.append(f'<h4 id="mod-{html.escape(pid)}-{html.escape(g["id"])}">'
+                   f'{html.escape(heading)}</h4>')
+        left_svg = render_svg(graph)
+        out.append('<div class="diagram-scroll">' + left_svg + "</div>")
+        if onnx_bundle:
+            onnx_ids = ([g["id"], "attn_indexer"] if g["id"] == "attn_csa" else [g["id"]])
+            out.append(_render_onnx_links(pid, onnx_ids, onnx_bundle, candidate_id))
+    out.append(legend_html())
+    out.append('<p class="dg-note">计算框=真实算子（源码调用名+计算类型，复合算子如实列出），'
+               "点击联查算子卡片；箭头上的 tensor 标注源码变量/表达式名与符号 shape，"
+               "点击联查张量索引；权重为虚线引用。<b>容器边界</b>只表示真实包含关系"
+               "（Attention ⊃ CSA Compressor ⊃ Lightning Indexer），不是计算算子；"
+               "<b>持久状态存储</b>框的字段左缘是读前/写后/视图时态端口，读/写线端点"
+               "落在具体字段上（更新后的值不会冒充调用前输入）；"
+               "配置选择是<b>控制线</b>（虚点线），与 tensor/cache 实线区分，"
+               "未生效的 HCA/SWA 如实标注未展开、不伪装切换。"
+               "同名源码变量按图内步骤消歧（HF 源码逐步重赋值，悬停见源码行号）；"
+               "专家模板仍只有一份（不复制 E 份）。</p></div>")
+
+    # 缓存注记
+    cache_notes = phase.get("cache_notes", [])
+    if cache_notes:
+        out.append('<div class="card"><h3>缓存状态与读写（本阶段）</h3><ul>')
+        out.extend(f"<li>{html.escape(str(n))}</li>" for n in cache_notes)
+        out.append("</ul></div>")
+
+
 
     # 算子流
     out.append('<div class="card"><h3>算子流（按真实阅读顺序）</h3><div class="ops">')
@@ -236,14 +315,39 @@ def _render_phase(phase: dict) -> str:
             for pr in involved
         ) or "—"
         sources = "<br>".join(
-            f'<span class="src-item">{html.escape(str(r.get("path", "")))}'
-            f'<span class="mono">:{html.escape(str(r.get("locator", "")))}</span>'
-            f' <span class="src-note">{html.escape(str(r.get("note", "")))}</span></span>'
-            for r in op.get("source_refs", [])
+            f'<span class="src-item">'
+            f'<button type="button" class="param-link src-btn" '
+            f'onclick="toggleSource(\'srcpanel-{html.escape(pid)}-{html.escape(str(op.get("id", "")))}-{k}\'); return false;">'
+            f'{html.escape(str(r.get("path", "")))}'
+            f'<span class="mono">:{html.escape(str(r.get("locator", "")))}</span></button>'
+            f'<span class="src-note">{html.escape(str(r.get("note", "")))}</span>'
+            f'</span>'
+            for k, r in enumerate(op.get("source_refs", []))
         ) or "—"
+        # 源码面板（离线快照，由 build 传入 source_snapshot）
+        src_panels = ""
+        for k, r in enumerate(op.get("source_refs", [])):
+            panel_id = f'srcpanel-{html.escape(pid)}-{html.escape(str(op.get("id", "")))}-{k}'
+            src_lines = _source_snapshot_lines(
+                r.get("path", ""), str(r.get("locator", "")), source_snapshot)
+            if src_lines is not None:
+                src_panels += (
+                    f'<div id="{panel_id}" class="src-panel" style="display:none">'
+                    f'<div class="src-panel-head">{html.escape(str(r.get("path","")))}:{html.escape(str(r.get("locator","")))}</div>'
+                    f'<pre class="src-code">{html.escape(src_lines)}</pre></div>')
+            else:
+                src_panels += (
+                    f'<div id="{panel_id}" class="src-panel" style="display:none">'
+                    f'<div class="src-panel-head">{html.escape(str(r.get("path","")))}:{html.escape(str(r.get("locator","")))}</div>'
+                    f'<pre class="src-code">（源码快照不可用：离线单文件未包含该文件内容）</pre></div>')
+        # 回图链接：当前算子在主详图中的 figop id
+        oid_esc = html.escape(str(op.get("id", "")))
+        locate = (f'<a class="param-link" href="#figop-{html.escape(pid)}-{oid_esc}" '
+                  f'onclick="event.preventDefault(); locateInDiagram(\'figop-{html.escape(pid)}-{oid_esc}\'); '
+                  f'return false;">定位到框图 ▸</a>')
         out.append(
             f'<div class="op {"op-blackbox" if blackbox else ""}" '
-            f'id="op-{html.escape(pid)}-{html.escape(str(op.get("id", "")))}">'
+            f'id="op-{html.escape(pid)}-{oid_esc}">'
             f'<div class="op-head"><span class="op-no">{i + 1}</span>'
             f'<span class="mono op-id">{html.escape(str(op.get("id", "")))}</span>'
             f'<span class="op-name">{html.escape(str(op.get("name", "")))}</span>'
@@ -257,6 +361,8 @@ def _render_phase(phase: dict) -> str:
             f"</div>"
             f"<div><span class=\"io-label\">参数</span>{param_links}</div>"
             f"<div><span class=\"io-label\">源码</span>{sources}</div>"
+            f"{src_panels}"
+            f"<div><span class=\"io-label\">回图</span>{locate}</div>"
             f"<div class=\"op-note\">{html.escape(str(op.get('note', '')))}</div>"
             f"</div>"
         )
@@ -265,7 +371,8 @@ def _render_phase(phase: dict) -> str:
     # 张量索引
     out.append('<div class="card"><h3>张量索引（联查）</h3>')
     out.append(
-        "<table class=\"tensors\"><thead><tr><th>张量id</th><th>名称</th><th>shape</th>"
+        "<div class=\"table-scroll\"><table class=\"tensors\">"
+        "<thead><tr><th>张量id</th><th>名称</th><th>shape</th>"
         "<th>类型</th><th>参数引用</th><th>说明</th></tr></thead><tbody>"
     )
     for t in tensors:
@@ -284,7 +391,7 @@ def _render_phase(phase: dict) -> str:
             f"<td>{prefs}</td>"
             f"<td>{html.escape(str(t.get('note', '')))}</td></tr>"
         )
-    out.append("</tbody></table></div>")
+    out.append("</tbody></table></div></div>")
 
     # 覆盖注记
     cov = phase.get("coverage_notes", [])
@@ -295,6 +402,42 @@ def _render_phase(phase: dict) -> str:
 
     out.append("</section>")
     return "\n".join(out)
+
+
+
+
+def _render_onnx_links(phase_id: str, module_ids: list[str], bundle: dict | None,
+                       candidate_id: str | None) -> str:
+    """每个模块一个本地 llmarchi-netron 链接（唤起本机 Netron）+ 下载/映射链接。"""
+    if not bundle or not candidate_id:
+        return ""
+    mods = bundle.get(phase_id, {})
+    parts: list[str] = []
+    for mid in module_ids:
+        entry = mods.get(mid)
+        if not entry:
+            parts.append(f'<p class="onnx-note">ONNX 未生成：{html.escape(mid)}'
+                         "（原因见 reports/onnx_build.json）</p>")
+            continue
+        st = entry["state"]
+        badge = (" 单专家模板；" if mid == "moe_expert" else
+                 " 默认因果/滑窗，padding 未覆盖；" if mid == "attn_mask" else "")
+        base = "../" + html.escape(entry.get("base", ""))
+        label = "CSA" if mid == "attn_csa" else ("Indexer" if mid == "attn_indexer" else mid)
+        href = (f"llmarchi-netron://open?candidate={html.escape(candidate_id)}"
+                f"&phase={html.escape(phase_id)}&module={html.escape(mid)}&variant=sim")
+        parts.append(
+            f'<p class="onnx-open">ONNX（{html.escape(label)}）：'
+            f'<a class="onnx-open-link" data-module="{html.escape(phase_id)}/{html.escape(mid)}" '
+            f'href="{href}">用本地 Netron 打开 '
+            f'<span class="mono">{html.escape(phase_id)}_{html.escape(mid)}.sim.onnx</span></a>'
+            f'<span class="onnx-note">（需已注册 llmarchi-netron 链接；'
+            f'{st.get("node_count_original")}→{st.get("node_count_simplified")} 节点；'
+            f'FP32 阅读特化、无真实权重，非量化模型数值等价；{badge}）</span>'
+            f'<span class="onnx-note"> 下载：<a href="{base}/model.onnx">原始 onnx</a> · '
+            f'<a href="{base}/model.sim.onnx">简化 onnx</a> · '
+            f'<a href="{base}/mapping.json">映射</a></span></p>')
+    return "".join(parts)
 
 
 def _value_repr(value) -> str:
@@ -355,9 +498,27 @@ h3 {{ font-size: 16px; margin: 4px 0 12px; }}
 .badge-decode {{ background: var(--decode); }}
 table {{ border-collapse: collapse; width: 100%; font-size: 13.5px; }}
 th, td {{ border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }}
+/* 反馈10：表格受 card 内容宽约束；长路径/表达式自然折行；必要时表格容器内水平滚动 */
+.table-scroll {{ width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible;
+  box-sizing: border-box; }}
+.card table {{ width: 100%; max-width: 100%; table-layout: auto; box-sizing: border-box; }}
+.card th, .card td {{ overflow-wrap: anywhere; word-break: break-word; white-space: normal; }}
+.card td.mono, .card td.src {{ word-break: break-all; }}
 th {{ background: var(--code); font-weight: 600; }}
 .sym {{ font-weight: 700; }}
 .src {{ color: var(--muted); font-size: 12px; }}
+.diagram-scroll {{ overflow: auto; }}
+.onnx-open {{ font-size: 13px; margin: 6px 0 14px; }}
+.onnx-open-link {{ font-weight: 600; }}
+.onnx-note {{ font-size: 12px; color: var(--muted); margin: 4px 0; }}
+.onnx-details {{ font-size: 12px; margin: 4px 0 2px; }}
+.onnx-badge {{ display: inline-block; font-size: 11px; font-weight: 600; color: #7a3b0e;
+  background: #fdf1e3; border: 1px solid #e8c9a6; border-radius: 8px; padding: 0 6px; }}
+.onnx-global-note {{ background: #eef4fa; border: 1px solid #c9d9ea; border-radius: 8px;
+  padding: 6px 10px; }}
+.onnx-details table {{ border-collapse: collapse; width: 100%; }}
+.onnx-details th, .onnx-details td {{ border: 1px solid var(--line); padding: 2px 6px;
+  vertical-align: top; }}
 .ops {{ display: flex; flex-direction: column; gap: 10px; }}
 .op {{
   border: 1px solid var(--line); border-left: 4px solid var(--accent);
@@ -401,6 +562,8 @@ th {{ background: var(--code); font-weight: 600; }}
 .param-link:hover {{ text-decoration: underline; }}
 .src-item {{ display: block; font-size: 12px; color: var(--muted); }}
 .src-item .mono {{ color: var(--ink); }}
+.src-btn {{ font: inherit; cursor: pointer; background: none; padding: 0; border: 0; }}
+.anchor-mark {{ display: block; height: 0; overflow: hidden; }}
 .src-note {{ color: var(--muted); }}
 .op-note {{ margin-top: 6px; font-size: 13.5px; color: #33404d; }}
 .err {{ color: var(--blackbox-ink); font-weight: 700; }}
@@ -439,6 +602,26 @@ _PAGE_FOOT = """<footer class="page">
 由 structure_reader HF 主干从本地 Transformers 检出与根 config.json 静态生成；
 不加载权重、不执行模型；静态结构一致为目标。黑盒算子以「内部未分析」醒目标注。
 </footer>
+
+<script>
+(function() {
+  "use strict";
+  // 7) 定位到框图：滚动+高亮
+  window.locateInDiagram = function(figId) {
+    var els = document.querySelectorAll('[id$="-' + figId + '"], [id="' + figId + '"]');
+    var el = els.length ? els[els.length - 1] : null;
+    if (!el) return;
+    el.scrollIntoView({behavior: "smooth", block: "center", inline: "center"});
+    el.style.filter = "drop-shadow(0 0 6px #e8a740)";
+    setTimeout(function() { el.style.filter = ""; }, 2000);
+  };
+  // 3) 源码面板开关
+  window.toggleSource = function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = (el.style.display === "none") ? "block" : "none";
+  };
+})();
+</script>
 </body>
 </html>
 """

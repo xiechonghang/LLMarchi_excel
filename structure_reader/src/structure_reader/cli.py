@@ -1167,6 +1167,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="工作区根目录；缺省从包位置向上定位，不依赖 cwd",
     )
     hf_parser.add_argument(
+        "--onnx", action="store_true",
+        help="额外生成模块级真实 ONNX/onnxsim 简化图（需项目内隔离安装 onnx/onnxsim/onnxruntime）"
+    )
+    hf_parser.add_argument(
         "--json", action="store_true", help="以 JSON 摘要输出"
     )
     return parser
@@ -1202,6 +1206,7 @@ def _cmd_build_hf(args: argparse.Namespace) -> int:
 
         result, documents = run_hf_build(
             workspace_root, _project_root(), layer_index=args.layer_index, model_key=model_key,
+            onnx_modules=bool(getattr(args, "onnx", False)),
         )
         target = result.output_dir
         outcome = _materialize(target, documents)

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 import sys
 import unittest
@@ -262,7 +263,7 @@ class TestSvgRendering(unittest.TestCase):
         self.assertIn('class="dg-node op"', svg)
         self.assertIn('<path class="dg-edge flow"', svg)
         self.assertIn('<path class="dg-edge weight"', svg)
-        self.assertIn('href="#op-prefill-op1"', svg)
+        self.assertRegex(svg, r'id="figop-[^"]*prefill-op1"')  # 回图锚点（横向overflow可定位）
         self.assertIn('href="#t-prefill-x_in"', svg)
         self.assertIn('href="#t-prefill-w"', svg)
 
@@ -273,8 +274,8 @@ class TestSvgRendering(unittest.TestCase):
         svg2 = render_svg(g2)
         ids1 = set(re.findall(r'marker id="([^"]+)"', svg1))
         ids2 = set(re.findall(r'marker id="([^"]+)"', svg2))
-        self.assertEqual(len(ids1), 3)
-        self.assertEqual(len(ids2), 3)
+        self.assertEqual(len(ids1), 4)
+        self.assertEqual(len(ids2), 4)
         self.assertFalse(ids1 & ids2, "不同图的 marker id 不得重名")
         for svg, ids in ((svg1, ids1), (svg2, ids2)):
             refs = set(re.findall(r'marker-end="url\(#([^)]+)\)"', svg))
@@ -373,7 +374,8 @@ class TestSvgRendering(unittest.TestCase):
     def test_cross_column_label_occlusion_replay(self):
         """自包含跨列遮挡回放：长跨列边标签原中点落在中间节点矩形内时，
         标签沿所属边滑移——锚点不再进入任何节点矩形，标签文本保留。"""
-        phase = self.phase
+        import copy
+        phase = copy.deepcopy(self.phase)
         long_name = "跨列长张量名称甲跨列长张量名称甲超长超长"
         ops = [
             _op("colA", ["x_in"], ["m1", "far"]),
@@ -395,7 +397,7 @@ class TestSvgRendering(unittest.TestCase):
         svg = render_svg(g)
         # 节点矩形与标签锚点
         rects = [(float(a), float(b), float(c)) for a, b, c in re.findall(
-            r'<g class="dg-node [^"]*" transform="translate\(([\d.-]+),([\d.-]+)\)">'
+            r'<g class="dg-node [^"]*"[^>]*transform="translate\(([\d.-]+),([\d.-]+)\)">'
             r'<rect width="172" height="([\d.]+)"', svg)]
         self.assertGreaterEqual(len(rects), len(ops))
         anchors = [(float(a), float(b)) for a, b in re.findall(
@@ -423,7 +425,7 @@ class TestSvgRendering(unittest.TestCase):
         g = build_module_graph(phase, {"id": "stk", "title": "s", "ops": ops})
         svg = render_svg(g)
         rects = [(float(a), float(b), float(c)) for a, b, c in re.findall(
-            r'<g class="dg-node [^"]*" transform="translate\(([\d.-]+),([\d.-]+)\)">'
+            r'<g class="dg-node [^"]*"[^>]*transform="translate\(([\d.-]+),([\d.-]+)\)">'
             r'<rect width="172" height="([\d.]+)"', svg)]
         for lx, ly in [(float(a), float(b)) for a, b in re.findall(
                 r'<text class="elabel[^"]*" x="([\d.-]+)" y="([\d.-]+)"', svg)]:
@@ -434,7 +436,8 @@ class TestSvgRendering(unittest.TestCase):
     def test_wide_cond_label_full_block_clear(self):
         """自包含「宽度超过默认间隙」回放：宽条件标签（如追加 N_win_i 条（可为 0））
         整块（含条件尾部）不与任何节点矩形相交；画布覆盖；节点标题仍在。"""
-        phase = {
+        import copy
+        phase = copy.deepcopy({
             "id": "prefill", "title": "w",
             "parameters": [
                 {"id": "Nwin_i", "symbol": "N_win_i", "meaning": "windows",
@@ -452,14 +455,14 @@ class TestSvgRendering(unittest.TestCase):
                 _op("i_scorer", ["out"], []),
             ],
             "cache_notes": ["x"], "coverage_notes": ["x"],
-        }
+        })
         g = build_module_graph(phase, {"id": "wide", "title": "w",
                                        "ops": phase["operators"]})
         svg = render_svg(g)
         # 条件尾文完整存在（未截断/未隐藏）
         self.assertIn("追加 N_win_i 条（可为 0）", svg)
         rects = [(float(a), float(b), float(c)) for a, b, c in re.findall(
-            r'<g class="dg-node [^"]*" transform="translate\(([\d.-]+),([\d.-]+)\)">'
+            r'<g class="dg-node [^"]*"[^>]*transform="translate\(([\d.-]+),([\d.-]+)\)">'
             r'<rect width="172" height="([\d.]+)"', svg)]
         self.assertGreaterEqual(len(rects), 3)
         view_x, view_y, view_w, view_h = (float(v) for v in re.search(
@@ -505,7 +508,7 @@ class TestSvgRendering(unittest.TestCase):
         bad = 0
         for svg in svgs:
             rects = [(float(a), float(b), float(c)) for a, b, c in re.findall(
-                r'<g class="dg-node [^"]*" transform="translate\(([\d.-]+),([\d.-]+)\)">'
+                r'<g class="dg-node [^"]*"[^>]*transform="translate\(([\d.-]+),([\d.-]+)\)">'
                 r'<rect width="172" height="([\d.]+)"', svg)]
             for m in re.finditer(
                     r'<text class="elabel[^"]*" x="([\d.-]+)" y="([\d.-]+)"', svg):
@@ -604,8 +607,12 @@ class TestRealDocumentClosure(unittest.TestCase):
                         for e in graph["edges"]]
                 self.assertEqual(len(keys), len(set(keys)), f"{g['id']}: 存在重复边")
                 for e in graph["edges"]:
+                    if not e["title"]:
+                        continue  # 载体注记边（无 tensor 引用）
                     self.assertIn(e["title"], tids)
                 for n in graph["nodes"]:
+                    if n["id"].startswith("display:"):
+                        continue  # 展示层载体注记节点（非 tensor 引用）
                     if n["id"].startswith("op:"):
                         self.assertIn(n["id"][3:], oids)
                     elif n["id"].startswith("t:"):
@@ -741,8 +748,10 @@ class TestOnnxViewSemantics(unittest.TestCase):
         self.assertIn('dg-dot boundary', q)
         ov = render_svg(build_overview_graph(phase))
         self.assertIn('dg-node nav', ov)
-        self.assertIn('dg-node navlane', ov)
-        self.assertIn('导航', ov)
+        # 缓存不再作为独立 lane 注记：改为"持久状态存储"载体框，并有真实读写边
+        self.assertIn('dg-node carrier', ov)
+        self.assertIn('持久状态存储', ov)
+        self.assertIn('past_key_values.layers[layer_idx]', ov)
 
     def test_cache_arrow_labels_carry_source_name_and_role(self):
         """缓存状态为端口圆点，箭头标签含时序角色 + 源码名 + shape。"""
@@ -793,11 +802,11 @@ class TestOnnxViewFix01(unittest.TestCase):
     @staticmethod
     def _svg_geoms(svg: str):
         """解析 SVG：圆点圆心（含 title）、IO/计算框矩形、路径端点。"""
-        circle_by_title = {}
+        circle_by_title = []
         for m in re.finditer(
                 r'<g class="dg-dot ([^"]*)" transform="translate\(([\d.-]+),([\d.-]+)\)">'
                 r'<circle r="5"/><title>([^<]*)</title>', svg):
-            circle_by_title[m.group(4)] = (float(m.group(2)), float(m.group(3)))
+            circle_by_title.append((m.group(4), (float(m.group(2)), float(m.group(3)))))
         rects = [(float(a), float(b), float(w), float(h)) for a, b, w, h in re.findall(
             r'<g class="dg-(?:node|port) [^"]*" transform="translate\(([\d.-]+),([\d.-]+)\)">'
             r'<rect width="([\d.]+)" height="([\d.]+)"', svg)]
@@ -814,8 +823,8 @@ class TestOnnxViewFix01(unittest.TestCase):
         for svg in svgs:
             circle_by_title, rects, _paths = self._svg_geoms(svg)
             dot_by_tid = {}
-            for title, center in circle_by_title.items():
-                dot_by_tid[title.split(" · ")[0]] = center
+            for title, center in circle_by_title:
+                dot_by_tid.setdefault(title.split(" · ")[0], []).append(center)
             for m in re.finditer(
                     r'<a href="#t-([\w-]+)"><path class="dg-edge[^"]*" '
                     r'd="M([\d.-]+),([\d.-]+) C[\d.-]+,[\d.-]+ [\d.-]+,[\d.-]+ '
@@ -824,9 +833,8 @@ class TestOnnxViewFix01(unittest.TestCase):
                 endpoints = [(float(m.group(2)), float(m.group(3))),
                              (float(m.group(4)), float(m.group(5)))]
                 if tid in dot_by_tid:
-                    cx, cy = dot_by_tid[tid]
-                    d = min((sx - cx) ** 2 + (sy - cy) ** 2
-                            for sx, sy in endpoints) ** 0.5
+                    d = min(((sx - cx) ** 2 + (sy - cy) ** 2) ** 0.5
+                            for cx, cy in dot_by_tid[tid] for sx, sy in endpoints)
                     checked += 1
                     self.assertLessEqual(d, 7.0,
                                          f"圆点 {tid} 距箭头端点 {d:.1f}px（悬空）")
@@ -925,7 +933,7 @@ class TestOnnxViewFix01(unittest.TestCase):
         checked = 0
         for svg in svgs:
             for m in re.finditer(
-                    r'<g class="dg-node op" transform="translate\([\d.-]+,[\d.-]+\)">'
+                    r'<g class="dg-node op"[^>]*transform="translate\([\d.-]+,[\d.-]+\)">'
                     r"<rect[^>]*/><title>([^<·]*) · [^<]*</title>(.*?)</g>", svg):
                 oid = m.group(1).strip()
                 full = op_source_label({"id": oid})
@@ -990,3 +998,533 @@ class TestOnnxViewFix01(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestReading05Structure(unittest.TestCase):
+    """反馈05剩余项的真实几何回放：容器嵌套、字段时态端口、配置选择、HTML 控件。
+
+    断言解析实际 SVG 几何（frame 矩形包围关系、字段端口圆点与边端点坐标、
+    控制线与 tensor/cache 线的 kind 区分），不是 contains 字符串碰瓷。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from structure_reader.extract.deepseek_v4_hf import build_reading_document
+        from structure_reader.render.decoder_page import render_decoder_page
+
+        cls.doc = build_reading_document(REPO_ROOT)
+        cls.html_text = render_decoder_page(cls.doc).decode("utf-8")
+        cls.svgs = re.findall(r"<svg class=\"dg\".*?</svg>", cls.html_text, re.S)
+
+    # ---- 解析 helper -------------------------------------------------
+    @staticmethod
+    def _frames(svg):
+        out = {}
+        for m in re.finditer(
+                r'<g class="dg-frame ([^"]*)"><rect x="([\d.-]+)" y="([\d.-]+)" '
+                r'width="([\d.]+)" height="([\d.]+)"', svg):
+            out[m.group(1)] = tuple(float(v) for v in m.groups()[1:])
+        return out
+
+    @staticmethod
+    def _frame_label(svg, style):
+        m = re.search(rf'<g class="dg-frame {style}">.*?<text class="flabel"[^>]*>'
+                      r'([^<]*)</text>', svg, re.S)
+        return m.group(1) if m else None
+
+    @staticmethod
+    def _fields(svg):
+        fields = []
+        for m in re.finditer(
+                r'<g class="dg-field" transform="translate\(([\d.-]+),([\d.-]+)\)">'
+                r'(.*?)</g>', svg, re.S):
+            x, y = float(m.group(1)), float(m.group(2))
+            body = m.group(3)
+            w = float(re.search(r'<rect width="([\d.]+)"', body).group(1))
+            h = float(re.search(r'<rect width="[\d.]+" height="([\d.]+)"', body).group(1))
+            ports = [(float(o), lbl) for o, lbl in re.findall(
+                r'<circle class="fport" cx="0" cy="([\d.]+)" r="4"/>'
+                r'<text class="fportlabel"[^>]*>([^<]*)</text>', body)]
+            fields.append({"x": x, "y": y, "w": w, "h": h, "ports": ports})
+        return fields
+
+    @staticmethod
+    def _paths(svg):
+        out = []
+        for m in re.finditer(
+                r'(?:<a href="([^"]+)">)?<path class="dg-edge ([^"]*)" d="'
+                r'M([\d.-]+),([\d.-]+) C[\d.-]+,[\d.-]+ [\d.-]+,[\d.-]+ '
+                r'([\d.-]+),([\d.-]+)"', svg):
+            out.append({"href": m.group(1) or "", "kind": m.group(2),
+                        "start": (float(m.group(3)), float(m.group(4))),
+                        "end": (float(m.group(5)), float(m.group(6)))})
+        return out
+
+    # ---- 1) 总览：真实嵌套容器 + 并列支路 + 缓存载体 ----
+    def test_overview_nested_containers_and_branches(self):
+        for phase in self.doc["phases"]:
+            from structure_reader.render.diagram import build_overview_graph, render_svg
+            svg = render_svg(build_overview_graph(phase))
+            frames = self._frames(svg)
+            for style in ("attn", "csa", "indexer"):
+                self.assertIn(style, frames, f"{phase['id']}: 缺 {style} 容器边界")
+            attn, csa, idx = frames["attn"], frames["csa"], frames["indexer"]
+
+            def inside(inner, outer):
+                return (outer[0] <= inner[0] and outer[1] <= inner[1]
+                        and inner[0] + inner[2] <= outer[0] + outer[2]
+                        and inner[1] + inner[3] <= outer[1] + outer[3])
+
+            self.assertTrue(inside(idx, csa), "Indexer 容器未真实嵌在 CSA 容器内")
+            self.assertTrue(inside(csa, attn), "CSA 容器未真实嵌在 Attention 容器内")
+            self.assertIn("Attention", self._frame_label(svg, "attn") or "")
+            self.assertIn("CSA", self._frame_label(svg, "csa") or "")
+            self.assertIn("Indexer", self._frame_label(svg, "indexer") or "")
+            # 三个并行支路在同一层横向并列（x 互不相同、y 同带）
+            ov = build_overview_graph(phase)
+            pos = ov["positions"]
+            rows = [pos["m:attn_q"], pos["m:attn_kv"], pos["m:attn_csa"]]
+            self.assertEqual(len({r[1] for r in rows}), 3, "Q/KV/CSA 未横向并列展开")
+            self.assertEqual(len({r[0] for r in rows}), 1, "Q/KV/CSA 应在同一层（真实并行）")
+
+    def test_overview_cache_carriers_connected_and_residual_interfaces_paired(self):
+        from structure_reader.render.diagram import build_overview_graph, render_svg
+        for phase in self.doc["phases"]:
+            ov = build_overview_graph(phase)
+            carriers = [n for n in ov["nodes"] if n["kind"] == "carrier"]
+            self.assertEqual(len(carriers), 3, "总览应有 main/csa/indexer 三个存储载体")
+            for c in carriers:
+                self.assertTrue(any(e["src"] == c["id"] or e["dst"] == c["id"]
+                                    for e in ov["edges"]),
+                                f"{c['id']} 载体没有真实读写边")
+            # 同名接口成对：每条 iface_pair 恰有来源端与去向端两条 stub 边
+            pairs = {}
+            for e in ov["edges"]:
+                if "iface_pair" in e:
+                    pairs.setdefault(e["iface_pair"], []).append(e)
+            self.assertGreaterEqual(len(pairs), 3, "长残差连接缺少成对接口")
+            for key, es in pairs.items():
+                self.assertEqual(len(es), 2, f"接口 {key} 不是成对两条边")
+                out_edge = next(e for e in es if e["dst"].startswith("if:"))
+                in_edge = next(e for e in es if e["src"].startswith("if:"))
+                self.assertEqual(out_edge["title"], in_edge["title"],
+                                 f"接口 {key} 两端张量清单不一致")
+            # 接口 chip 可见同名文字（同名配对）
+            svg = render_svg(ov)
+            for key in pairs:
+                src, dst = key.split("->")
+                src_node = next(n for n in ov["nodes"] if n["id"] == f"if:{src}:out")
+                dst_node = next(n for n in ov["nodes"] if n["id"] == f"if:{dst}:in")
+                name = src_node["label"].lstrip("▸ ").strip()
+                self.assertIn(name.split("、")[0], dst_node["label"])
+                self.assertIn("同名接口", svg)
+
+    # ---- 2) 详细阅读：CSA ⊃ Indexer 父子里图 + 图内三选一 ----
+    def test_composite_csa_nesting_and_selector(self):
+        from structure_reader.render.diagram import (
+            build_csa_composite_graph, module_groups, render_svg)
+        for phase in self.doc["phases"]:
+            groups = {g["id"]: g for g in module_groups(phase)}
+            graph = build_csa_composite_graph(phase, groups["attn_csa"],
+                                              groups["attn_indexer"])
+            # 父子里图：csa 的 children 里含 indexer 帧，且 frame 几何真嵌套
+            frame_defs = {f["id"]: f for f in graph["frames"]}
+            self.assertIn("frame:indexer", frame_defs["frame:csa"]["children"])
+            svg = render_svg(graph)
+            frames = self._frames(svg)
+            csa, idx = frames["csa"], frames["indexer"]
+            self.assertTrue(csa[0] <= idx[0] and csa[1] <= idx[1]
+                            and idx[0] + idx[2] <= csa[0] + csa[2]
+                            and idx[1] + idx[3] <= csa[1] + csa[3],
+                            "详细图里 Indexer 容器未真正嵌在 CSA 容器内")
+            # 配置选择：三个选项、恰一个生效；控制线与实例化线单独 kind
+            opts = [n for n in graph["nodes"] if n["kind"] == "controlopt"]
+            self.assertEqual(len(opts), 3, "压缩器配置应有三个选项")
+            self.assertEqual(sum(1 for n in opts if n.get("active")), 1,
+                             "配置选择应恰有一个当前生效项")
+            self.assertEqual({n["label"] for n in opts},
+                             {"compressed_sparse_attention",
+                              "heavily_compressed_attention", "sliding_attention"})
+            ctrl = [e for e in graph["edges"] if e["kind"] == "control"]
+            self.assertEqual(len(ctrl), 4, "应有 3 条控制选择线 + 1 条实例化线")
+            self.assertTrue(any(e["dst"] == "frame:csa" for e in ctrl),
+                            "缺少选中 → self.compressor 的实例化线")
+            # 控制线在 SVG 里是独立 class，与 tensor/cache 实线区分
+            self.assertGreaterEqual(svg.count('class="dg-edge control'), 4)
+            self.assertTrue(svg.count('class="dg-edge flow"') > 0)
+
+    # ---- 3) 缓存字段：真实前读/后写端点落在具体字段行 ----
+    def test_cache_field_temporal_ports(self):
+        from structure_reader.render.diagram import (
+            build_csa_composite_graph, module_groups, render_svg)
+        for phase in self.doc["phases"]:
+            groups = {g["id"]: g for g in module_groups(phase)}
+            graph = build_csa_composite_graph(phase, groups["attn_csa"],
+                                              groups["attn_indexer"])
+            svg = render_svg(graph)
+            fields = self._fields(svg)
+            self.assertGreaterEqual(len(fields), 6, "CSA/Indexer 存储字段不足")
+            paths = self._paths(svg)
+            used = set()
+            for p in paths:
+                if "cache" not in p["kind"]:
+                    continue
+                for end, side in ((p["start"], "src"), (p["end"], "dst")):
+                    for f in fields:
+                        if abs(end[0] - f["x"]) <= 1.5 and f["y"] <= end[1] <= f["y"] + f["h"]:
+                            off = end[1] - f["y"]
+                            labels = [lbl for o, lbl in f["ports"] if abs(o - off) <= 1.5]
+                            self.assertTrue(labels, f"缓存线端点未落在字段端口上: {end}")
+                            used.add(labels[0])
+                            # 前读/后写/视图 与张量时态一致
+                            tid = p["href"].split("-", 1)[1] if p["href"] else ""
+                            if labels[0] == "读前":
+                                self.assertFalse(tid.endswith("_post") or tid == "kv_full",
+                                                 f"调用后状态被画成读前输入: {tid}")
+                            elif labels[0] == "写后":
+                                self.assertTrue(tid.endswith("_post"),
+                                                f"写后端点用于非调用后张量: {tid}")
+                            elif labels[0] == "视图":
+                                self.assertEqual(tid, "kv_full")
+            self.assertIn("读前", used, "缺少调用前状态读取端口")
+            self.assertIn("写后", used, "缺少调用后写回端口")
+            # 更新后的未来状态不得出现在读前端口（上面逐边已核），并检查
+            # 同一字段的读前端与写后端在几何上是两个不同位置
+            multi = [f for f in fields if len(f["ports"]) >= 2]
+            self.assertTrue(multi, "字段行应有多个时态端口")
+            for f in multi:
+                offs = [o for o, _ in f["ports"]]
+                self.assertEqual(len(offs), len(set(offs)), "同一字段端口位置重复")
+
+    # ---- 4) 源码按钮 HTML 控件结构 ----
+    def test_source_buttons_valid_html_controls(self):
+        html = self.html_text
+        self.assertEqual(html.count("<button"), html.count("</button>"),
+                         "button 开闭数量不一致")
+        self.assertEqual(len(re.findall(r"<button[^>]*>.*?</button>", html,
+                                        re.S)), html.count("<button"),
+                         "存在未正确闭合的 button")
+        # 旧缺陷：按钮内残留孤立 </a>（182 处）
+        self.assertEqual(len(re.findall(r"</a>(?=\s*<span class=\"src-note\")", html)), 0,
+                         "源码按钮内仍有孤立 </a>")
+        self.assertIn('type="button"', html)
+        # 每个 button 的 onclick 目标面板 id 必须真实存在
+        ids = set(re.findall(r'id="(srcpanel-[^"]+)"', html))
+        targets = set(re.findall(r"toggleSource\('([^']+)'", html))
+        self.assertTrue(targets)
+        self.assertTrue(targets <= ids, "源码按钮指向不存在的面板")
+
+    def test_all_inline_svg_xml_wellformed(self):
+        import xml.etree.ElementTree as ET
+        for svg in self.svgs:
+            ET.fromstring(svg)  # 解析失败即抛错：SVG 必须真实 XML 合法
+        # 所有内链目标唯一且存在（含新增容器/字段/配置图）
+        ids = re.findall(r'\bid="([^"]+)"', self.html_text)
+        dup = {i for i in ids if ids.count(i) > 1}
+        self.assertFalse(dup, f"页面存在重复 id: {sorted(dup)[:5]}")
+        anchors = {i for i in ids if not i.startswith("srcpanel-")}
+        for href in set(re.findall(r'href="#([^"]+)"', self.html_text)):
+            self.assertIn(href, anchors, f"内链目标不存在: #{href}")
+
+
+class TestReading05Fix01(unittest.TestCase):
+    """有限收尾01：具名总览走线避让、复合图恢复统一 store 载体框、实际暗色配色。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from structure_reader.extract.deepseek_v4_hf import build_reading_document
+        from structure_reader.render.decoder_page import render_decoder_page
+
+        cls.doc = build_reading_document(REPO_ROOT)
+        cls.html_text = render_decoder_page(cls.doc).decode("utf-8")
+
+    # ---- 1) 具名总览线不穿无关计算/导航框 ----
+    def test_overview_named_paths_avoid_unrelated_boxes(self):
+        from structure_reader.render.diagram import build_overview_graph, render_svg
+
+        def contain(rect, pt, pad=2.0):
+            x, y, w, h = rect
+            return x + pad < pt[0] < x + w - pad and y + pad < pt[1] < y + h - pad
+
+        def bez(p, t):
+            x0, y0, x1, y1, x2, y2, x3, y3 = p
+            mt = 1 - t
+            return (mt ** 3 * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t ** 3 * x3,
+                    mt ** 3 * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t ** 3 * y3)
+
+        for phase in self.doc["phases"]:
+            graph = build_overview_graph(phase)
+            svg = render_svg(graph)
+            rects = {}
+            for m in re.finditer(
+                    r'<a href="#([^"]+)"><g class="dg-node ([^"]*)"[^>]*transform="translate\('
+                    r'([\d.-]+),([\d.-]+)\)"><rect width="([\d.]+)" height="([\d.]+)"', svg):
+                rects[m.group(1)] = (float(m.group(3)), float(m.group(4)),
+                                     float(m.group(5)), float(m.group(6)))
+            paths = [[float(v) for v in m.groups()]
+                     for m in re.finditer(r'<path class="dg-edge[^"]*" d="M([\d.-]+),([\d.-]+) '
+                                          r'C([\d.-]+),([\d.-]+) ([\d.-]+),([\d.-]+) '
+                                          r'([\d.-]+),([\d.-]+)"', svg)]
+            self.assertEqual(len(paths), len(graph["edges"]))
+            named = 0
+            for e, p in zip(graph["edges"], paths):
+                target = None
+                if {e["src"], e["dst"]} == {"c:main", "m:attn_cache"}:
+                    target = "mod-" + phase["id"] + "-attn_core"
+                elif (e["src"], e["dst"]) == ("m:attn_q", "m:attn_out"):
+                    target = "mod-" + phase["id"] + "-attn_mask"
+                if not target:
+                    continue
+                named += 1
+                self.assertIn(target, rects)
+                for k in range(1, 24):
+                    pt = bez(p, k / 24)
+                    self.assertFalse(contain(rects[target], pt),
+                                     f"{phase['id']} {e['src']}->{e['dst']} 仍穿过 {target} @{pt}")
+            self.assertEqual(named, 3, "应覆盖 2 条 main↔attn_cache + 1 条 q→out")
+
+    # ---- 2) 复合图：csa/indexer 字段回到同一 Cache 对象的存储框内 ----
+    def test_composite_store_frames_own_fields(self):
+        from structure_reader.render.diagram import (
+            build_csa_composite_graph, module_groups, render_svg)
+
+        def frames(svg):
+            out = []
+            for m in re.finditer(
+                    r'<g class="dg-frame ([^"]*)"><rect x="([\d.-]+)" y="([\d.-]+)" '
+                    r'width="([\d.]+)" height="([\d.]+)"[^>]*/>'
+                    r'<text class="flabel"[^>]*>([^<]*)</text>', svg):
+                out.append({"style": m.group(1),
+                            "rect": tuple(float(v) for v in m.groups()[1:5]),
+                            "label": html.unescape(m.group(6))})
+            return out
+
+        def inside(a, b):
+            return (b[0] <= a[0] and b[1] <= a[1]
+                    and a[0] + a[2] <= b[0] + b[2] and a[1] + a[3] <= b[1] + b[3])
+
+        for phase in self.doc["phases"]:
+            groups = {g["id"]: g for g in module_groups(phase)}
+            graph = build_csa_composite_graph(phase, groups["attn_csa"],
+                                              groups["attn_indexer"])
+            frame_ids = {f["id"] for f in graph["frames"]}
+            self.assertIn("frame:store:csa", frame_ids, "复合图丢了 csa 的 store 载体框")
+            self.assertIn("frame:store:indexer", frame_ids, "复合图丢了 indexer 的 store 载体框")
+            # 存储框属于对应父子容器
+            kids = {f["id"]: f["children"] for f in graph["frames"]}
+            self.assertIn("frame:store:indexer", kids["frame:indexer"])
+            self.assertIn("frame:store:csa", kids["frame:csa"])
+            svg = render_svg(graph)
+            fs = frames(svg)
+            stores = [f for f in fs if f["style"] == "store"]
+            self.assertEqual(len(stores), 2, "应有两个键的存储载体框")
+            by_key = {("compressor" if "compressor" in f["label"] else "indexer"): f
+                      for f in stores}
+            self.assertEqual(set(by_key), {"compressor", "indexer"})
+            csa_frame = next(f for f in fs if f["style"] == "csa")["rect"]
+            idx_frame = next(f for f in fs if f["style"] == "indexer")["rect"]
+            self.assertTrue(inside(by_key["compressor"]["rect"], csa_frame),
+                            "compressor 存储框不在 CSA 容器内")
+            self.assertTrue(inside(by_key["indexer"]["rect"], idx_frame),
+                            "indexer 存储框不在 Indexer 容器内")
+            # 每个字段行几何上落在自己键的存储框内
+            fields = []
+            for m in re.finditer(
+                    r'<g class="dg-field" transform="translate\(([\d.-]+),([\d.-]+)\)">'
+                    r'<rect width="([\d.]+)" height="([\d.]+)"[^>]*/><title>([^<]*)</title>', svg):
+                fields.append({"rect": (float(m.group(1)), float(m.group(2)),
+                                        float(m.group(3)), float(m.group(4))),
+                               "title": html.unescape(m.group(5))})
+            self.assertGreaterEqual(len(fields), 12)
+            for f in fields:
+                self.assertTrue(f["title"].startswith("past_key_values.layers[layer_idx]."),
+                                f"字段 owner 不明确: {f['title']}")
+                key = "compressor" if "['compressor']" in f["title"] else "indexer"
+                self.assertIn(f"['{key}']", f["title"])
+                self.assertTrue(inside(f["rect"], by_key[key]["rect"]),
+                                f"{f['title']} 不在 {key} 存储框内")
+            # 存储框表头完整：表头带实际高于首个字段行、且不与字段行重叠
+            for key in ("compressor", "indexer"):
+                rect = by_key[key]["rect"]
+                in_store = [f["rect"] for f in fields
+                            if inside(f["rect"], rect)
+                            and ("['compressor']" in f["title"]) == (key == "compressor")]
+                self.assertTrue(in_store, f"{key} 存储框内没有字段行")
+                first_top = min(f[1] for f in in_store)
+                header_h = first_top - rect[1]
+                self.assertGreaterEqual(header_h, 42.0,
+                                        f"{key} 存储框表头被字段行挤占（{header_h}px）")
+            # 存储框声明同一真实 Cache 对象
+            store_defs = {f["id"]: f for f in graph["frames"]}
+            for fid, key in (("frame:store:csa", "compressor"),
+                             ("frame:store:indexer", "indexer")):
+                sub = store_defs[fid]["sub"]
+                self.assertIn("past_key_values.layers[layer_idx]", sub)
+                self.assertIn("DeepseekV4CSACache", sub)
+                self.assertIn(key, store_defs[fid]["label"])
+            self.assertIn("持久状态存储", by_key["compressor"]["label"])
+
+    # ---- 3) 实际 CSS 声明与真实对比度（含暗主题 store/线/marker） ----
+    def test_store_and_frame_colours_actual_cascade(self):
+        from structure_reader.render.diagram import diagram_css
+
+        css = re.sub(r"/\*.*?\*/", "", diagram_css(), flags=re.S)
+        i = css.index("@media (prefers-color-scheme: dark)")
+        base, dark = css[:i], css[i:]
+        dark_body = dark[dark.index("{") + 1:dark.rindex("}")]
+
+        def rules(block):
+            out = []
+            for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", block):
+                sels = [s.strip() for s in m.group(1).replace("\n", " ").split(",") if s.strip()]
+                ds = dict((k.strip(), v.strip()) for k, v in
+                          re.findall(r"([\w-]+)\s*:\s*([^;]+);?", m.group(2)))
+                out.append((sels, ds))
+            return out
+
+        def resolve(sel, prop, is_dark=False):
+            val = None
+            for sels, ds in rules(base):
+                if sel in sels and prop in ds:
+                    val = ds[prop]
+            if is_dark:
+                for sels, ds in rules(dark_body):
+                    if sel in sels and prop in ds:
+                        val = ds[prop]
+            return val
+
+        def lum(color):
+            r, g, b = (int(color[k:k + 2], 16) / 255 for k in (1, 3, 5))
+
+            def f(c):
+                return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+            return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+        def ratio(a, b):
+            l1, l2 = sorted((lum(a), lum(b)), reverse=True)
+            return (l1 + 0.05) / (l2 + 0.05)
+
+        light_bg = resolve(".dg-frame.store rect", "fill")
+        dark_bg = resolve(".dg-frame.store rect", "fill", True)
+        self.assertNotEqual(light_bg, dark_bg, "暗主题 store 背景仍未成对调整")
+        for is_dark, bg in ((False, light_bg), (True, dark_bg)):
+            for sel in (".dg-frame.store .flabel", ".dg-frame.store .fsub"):
+                txt = resolve(sel, "fill", is_dark)
+                self.assertGreaterEqual(ratio(txt, bg), 4.5,
+                                        f"{sel} 在 {'dark' if is_dark else 'light'} store 底上对比不足")
+            for sel, prop in ((".dg-edge.cache", "stroke"), (".dg-arr-cache", "fill")):
+                col = resolve(sel, prop, is_dark)
+                self.assertGreaterEqual(ratio(col, bg), 4.5,
+                                        f"{sel} 进入 store 背景对比不足")
+        self.assertGreaterEqual(ratio(resolve(".dg-frame.store rect", "stroke", True),
+                                      dark_bg), 3.0)
+        # 非 store 透明容器在真实暗底页背景上仍可辨（按实际声明，不用截图）
+        page_dark = "#1d2126"
+        for sel in (".dg-frame.attn rect", ".dg-frame.csa rect",
+                    ".dg-frame.indexer rect", ".dg-frame rect"):
+            col = resolve(sel, "stroke", True)
+            self.assertGreaterEqual(ratio(col, page_dark), 3.0,
+                                    f"{sel} 在暗底页面背景对比不足")
+        # 浅主题计算框仍为固定浅底深字（保持已认可配色）
+        self.assertEqual(resolve(".dg-node.op rect", "fill"), "#fcfdfe")
+        self.assertEqual(resolve(".dg-node .nlabel", "fill"), "#1f2933")
+
+
+class TestReading05Fix02(unittest.TestCase):
+    """有限收尾02：main 真实 Cache 属性名/返回视图身份 + 一条接口 stub 密集采样避让。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from structure_reader.extract.deepseek_v4_hf import build_reading_document
+
+        cls.doc = build_reading_document(REPO_ROOT)
+
+    @staticmethod
+    def _fields(svg):
+        out = []
+        for m in re.finditer(
+                r'<g class="dg-field" transform="translate\(([\d.-]+),([\d.-]+)\)">'
+                r'<rect width="([\d.]+)" height="([\d.]+)"[^>]*/>'
+                r'<title>([^<]*)</title>(.*?)</g>', svg, re.S):
+            out.append({"title": html.unescape(m.group(5)),
+                        "labels": [html.unescape(x) for x in
+                                   re.findall(r'<text class="flabel"[^>]*>([^<]*)</text>',
+                                              m.group(6))],
+                        "ports": [html.unescape(x) for x in
+                                  re.findall(r'<text class="fportlabel"[^>]*>([^<]*)</text>',
+                                             m.group(6))]})
+        return out
+
+    def test_main_cache_field_real_names(self):
+        from structure_reader.render.diagram import (
+            build_module_graph, module_groups, render_svg)
+
+        phase = self.doc["phases"][0]
+        groups = {g["id"]: g for g in module_groups(phase)}
+        cum_fields = self._fields(render_svg(
+            build_module_graph(phase, groups["attn_mask"])))
+        full_fields = self._fields(render_svg(
+            build_module_graph(phase, groups["attn_cache"])))
+        cum = next(f for f in cum_fields if "cumulative_length" in f["title"])
+        joined = "".join(cum["labels"])
+        self.assertIn("self.cumulative_length", joined)
+        self.assertNotIn("self.cumlen", joined, "真实属性名被写成 self.cumlen")
+        self.assertEqual(cum["title"],
+                         "past_key_values.layers[layer_idx].cumulative_length")
+        self.assertEqual(cum["ports"], ["读前"])
+        full = next(f for f in full_fields
+                    if f["title"].startswith("DeepseekV4CSACache.update"))
+        self.assertIn("update 返回的局部 full", full["title"])
+        self.assertIn("不是 past_key_values 的 Cache 字段", full["title"])
+        self.assertIn("不持久", "".join(full["labels"]))
+        self.assertIn("update 局部返回", "".join(full["labels"]))
+        self.assertEqual(full["ports"], ["视图"], "full 只能是本次读视图端口")
+        # 内部展示键与 JSON 张量 id 不变（只改真实源码名/语义）
+        self.assertIn("f:main:cumlen", {n["id"] for n in
+                                        build_module_graph(phase, groups["attn_mask"])["nodes"]})
+        self.assertIn("f:main:full", {n["id"] for n in
+                                      build_module_graph(phase, groups["attn_cache"])["nodes"]})
+        tensor_ids = {t["id"] for t in phase["tensors"]}
+        self.assertIn("cache_cumlen", tensor_ids)
+        self.assertIn("kv_full", tensor_ids)
+
+    def test_overview_stub_clears_adjacent_chip_dense(self):
+        from structure_reader.render.diagram import build_overview_graph, render_svg
+
+        def bez(p, t):
+            x0, y0, x1, y1, x2, y2, x3, y3 = p
+            mt = 1 - t
+            return (mt ** 3 * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t ** 3 * x3,
+                    mt ** 3 * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t ** 3 * y3)
+
+        for phase in self.doc["phases"]:
+            graph = build_overview_graph(phase)
+            svg = render_svg(graph)
+            rects = []
+            for m in re.finditer(
+                    r'<g class="(dg-node [^"]*)"[^>]*transform="translate\('
+                    r'([\d.-]+),([\d.-]+)\)"><rect width="([\d.]+)" height="([\d.]+)"', svg):
+                rects.append((float(m.group(2)), float(m.group(3)),
+                              float(m.group(4)), float(m.group(5))))
+            paths = [[float(v) for v in m.groups()] for m in re.finditer(
+                r'<path class="dg-edge[^"]*" d="M([\d.-]+),([\d.-]+) C([\d.-]+),([\d.-]+) '
+                r'([\d.-]+),([\d.-]+) ([\d.-]+),([\d.-]+)"', svg)]
+            self.assertEqual(len(paths), len(graph["edges"]))
+            # 高密度采样：23 点会漏掉 t≈0.79 的擦边，用 400 点
+            bad = []
+            for e, p in zip(graph["edges"], paths):
+                for k in range(1, 400):
+                    pt = bez(p, k / 400)
+                    if any(rx + 1 < pt[0] < rx + rw - 1 and ry + 1 < pt[1] < ry + rh - 1
+                           for rx, ry, rw, rh in rects):
+                        bad.append((e["src"], e["dst"], round(pt[0], 1), round(pt[1], 1)))
+                        break
+            self.assertEqual(bad, [], f"{phase['id']} 总览仍有穿框: {bad[:4]}")
+            # 具名：res_attn 的去向端 stub 不再穿过相邻 attn_out_streams 接口 chip
+            stub = next((i for i, e in enumerate(graph["edges"])
+                         if e["src"].startswith("if:m:res_attn:in")
+                         and e["dst"] == "m:res_attn"), None)
+            self.assertIsNotNone(stub)
+            chip = next(n for n in graph["nodes"]
+                        if n["id"] == graph["edges"][stub]["src"])
+            self.assertIn("attn_mhc_post", chip["title"])  # 同一去向端 chip

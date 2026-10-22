@@ -100,6 +100,95 @@ _CONDITION_LABELS = {
     "i_update_states": ("追加 N_win_i 条（可为 0）", ("Nwin_i",)),
 }
 
+# ---------------------------------------------------------------------------
+# 缓存存储载体的字段（展示层）：同一 past_key_values.layers[layer_idx] 对象，
+# 字段名/键来自 HF 源码事实（:156-294、CSA :626-690）；字段属于载体框内部，
+# 读/写线的端点落在具体字段的时态端口（pre=调用前态 / post=调用后态 / view=本次读视图）。
+# ---------------------------------------------------------------------------
+
+_CACHE_FIELD_SPECS: dict[str, tuple[tuple[str, str, str], ...]] = {
+    "main": (
+        ("keys", "self.keys / self.values（K=V 同存储）",
+         "past_key_values.layers[layer_idx].keys/values（layer_idx 槽）"),
+        ("cumlen", "self.cumulative_length（已累计 token 数）",
+         "past_key_values.layers[layer_idx].cumulative_length · HF :196-197"),
+        ("full", "full = cat(keys, kv_rope)（update 局部返回，本次读视图，不持久）",
+         "HF :197-201 update 内局部变量 full（非 Cache 存储属性）"),
+    ),
+    "csa": (
+        ("buffer_kv", "self.buffer_kv['compressor']（未闭窗余量）",
+         "buffer_kv 字典的 'compressor' 键"),
+        ("buffer_gate", "self.buffer_gate['compressor']",
+         "buffer_gate 字典的 'compressor' 键"),
+        ("compressed_kv", "self.compressed_kv['compressor']（已发射条目）",
+         "compressed_kv 字典的 'compressor' 键"),
+        ("entry_count", "self.entry_count['compressor']（窗口计数）",
+         "entry_count 字典的 'compressor' 键"),
+        ("overlap_kv", "self.overlap_kv['compressor']（闭窗 Ca 尾）",
+         "overlap_kv 字典的 'compressor' 键"),
+        ("overlap_gate", "self.overlap_gate['compressor']",
+         "overlap_gate 字典的 'compressor' 键"),
+    ),
+    "indexer": (
+        ("buffer_kv", "self.buffer_kv['indexer']（未闭窗余量）",
+         "buffer_kv 字典的 'indexer' 键（与 compressor 分开）"),
+        ("buffer_gate", "self.buffer_gate['indexer']",
+         "buffer_gate 字典的 'indexer' 键"),
+        ("compressed_kv", "self.compressed_kv['indexer']（已发射条目）",
+         "compressed_kv 字典的 'indexer' 键"),
+        ("entry_count", "self.entry_count['indexer']（窗口计数）",
+         "entry_count 字典的 'indexer' 键"),
+        ("overlap_kv", "self.overlap_kv['indexer']（闭窗 Ca 尾）",
+         "overlap_kv 字典的 'indexer' 键"),
+        ("overlap_gate", "self.overlap_gate['indexer']",
+         "overlap_gate 字典的 'indexer' 键"),
+    ),
+}
+
+# 张量 id → (载体族, 字段名)；字段名与 _CACHE_FIELD_SPECS 对齐。
+_CACHE_TENSOR_FIELD: dict[str, tuple[str, str]] = {
+    "cache_keys": ("main", "keys"), "cache_keys_post": ("main", "keys"),
+    "cache_cumlen": ("main", "cumlen"), "kv_full": ("main", "full"),
+    "cache_buffer_c_kv": ("csa", "buffer_kv"),
+    "cache_buffer_c_kv_post": ("csa", "buffer_kv"),
+    "cache_buffer_c_gate": ("csa", "buffer_gate"),
+    "cache_buffer_c_gate_post": ("csa", "buffer_gate"),
+    "cache_compressed_c": ("csa", "compressed_kv"),
+    "cache_compressed_c_post": ("csa", "compressed_kv"),
+    "cache_entry_count_c": ("csa", "entry_count"),
+    "cache_entry_count_c_post": ("csa", "entry_count"),
+    "cache_overlap_c_kv": ("csa", "overlap_kv"),
+    "cache_overlap_c_kv_post": ("csa", "overlap_kv"),
+    "cache_overlap_c_gate": ("csa", "overlap_gate"),
+    "cache_overlap_c_gate_post": ("csa", "overlap_gate"),
+    "cache_buffer_i_kv": ("indexer", "buffer_kv"),
+    "cache_buffer_i_kv_post": ("indexer", "buffer_kv"),
+    "cache_buffer_i_gate": ("indexer", "buffer_gate"),
+    "cache_buffer_i_gate_post": ("indexer", "buffer_gate"),
+    "cache_compressed_i": ("indexer", "compressed_kv"),
+    "cache_compressed_i_post": ("indexer", "compressed_kv"),
+    "cache_entry_count_i": ("indexer", "entry_count"),
+    "cache_entry_count_i_post": ("indexer", "entry_count"),
+    "cache_overlap_i_kv": ("indexer", "overlap_kv"),
+    "cache_overlap_i_kv_post": ("indexer", "overlap_kv"),
+    "cache_overlap_i_gate": ("indexer", "overlap_gate"),
+    "cache_overlap_i_gate_post": ("indexer", "overlap_gate"),
+}
+
+# 字段时态端口：pre=调用前态（只读），post=调用后态（写/读本次产物），
+# view=本次读视图（update 返回，不持久）。
+_CACHE_PORT_LABELS = {"pre": "读前", "post": "写后", "view": "视图"}
+
+
+def _cache_field_tid(tid: str) -> tuple[str, str] | None:
+    return _CACHE_TENSOR_FIELD.get(tid)
+
+
+def _cache_port_of(tid: str) -> str:
+    if tid == "kv_full":
+        return "view"
+    return "post" if tid.endswith("_post") else "pre"
+
 
 def _match(op_id: str, rule) -> bool:
     if isinstance(rule, str):
@@ -262,7 +351,7 @@ def _dedup_edges(edges: list[dict]) -> list[dict]:
     return out
 
 
-def build_module_graph(phase: dict, group: dict) -> dict:
+def build_module_graph(phase: dict, group: dict, field_ports: bool = True) -> dict:
     """模块算子图：节点=组内算子+外部端口，边=真实张量引用。
 
     - 内部边：producer op → consumer op（组内；仅由输出侧生成一次，不做输入/输出
@@ -272,6 +361,9 @@ def build_module_graph(phase: dict, group: dict) -> dict:
     - 输出端口：组内产出、但无组内下游的张量（缓存回写含条件标注）；
     - 权重引用为虚线边（引用，不改变数据流方向；组内产出的权重切片由
       producer→consumer 直连表达，不重复端口）。
+    - field_ports=True 时，缓存张量不再画成圆点，而是接入"持久状态存储"载体的
+      具体字段，读/写线端点落在字段的时态端口（pre/post/view）；
+      field_ports=False 保留旧的缓存端口行为（缓存图族回放用）。
     边最终按 (src,dst,kind,张量,条件,标签) 去重；不同张量各自成边不丢。
     """
     tensors = _tensor_map(phase)
@@ -281,6 +373,15 @@ def build_module_graph(phase: dict, group: dict) -> dict:
     ops = group["ops"]
     op_ids = {o["id"] for o in ops}
 
+    referenced: set[str] = set()
+    for op in ops:
+        referenced.update(op.get("inputs", []))
+        referenced.update(op.get("outputs", []))
+    cache_tids = ({tid for tid in referenced
+                   if tensors.get(tid, {}).get("kind") == "cache"
+                   and _cache_field_tid(tid) is not None}
+                  if field_ports else set())
+
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
     for op in ops:
@@ -289,6 +390,8 @@ def build_module_graph(phase: dict, group: dict) -> dict:
     for op in ops:
         oid = op["id"]
         for tid in op.get("inputs", []):
+            if tid in cache_tids:
+                continue  # 缓存状态统一走载体字段端点（下方）
             internal = any(phase["operators"][p]["id"] in op_ids
                            for p in producers.get(tid, []))
             if internal:
@@ -301,6 +404,8 @@ def build_module_graph(phase: dict, group: dict) -> dict:
                 f"t:{tid}", f"op:{oid}", kind, _tensor_label(tid, tensors),
                 "", f"#t-{phase['id']}-{tid}", tid))
         for tid in op.get("weights", []):
+            if tid in cache_tids:
+                continue
             produced_inside = any(phase["operators"][p]["id"] in op_ids
                                   for p in producers.get(tid, []))
             if produced_inside:
@@ -313,6 +418,8 @@ def build_module_graph(phase: dict, group: dict) -> dict:
     for op in ops:
         oid = op["id"]
         for tid in op.get("outputs", []):
+            if tid in cache_tids:
+                continue
             kind = _edge_kind(tid, tensors)
             downstream = {phase["operators"][c]["id"]
                           for c in consumers.get(tid, []) + weight_consumers.get(tid, [])
@@ -333,15 +440,356 @@ def build_module_graph(phase: dict, group: dict) -> dict:
                     f"op:{oid}", f"t:{tid}", kind, _tensor_label(tid, tensors),
                     cond, f"#t-{phase['id']}-{tid}", tid))
 
-    return {"id": group["id"], "title": group["title"], "nodes": list(nodes.values()),
-            "edges": _dedup_edges(edges), "phase": phase["id"]}
+    # 缓存状态 → 载体字段端点：读线接 pre/视图端口，写线接 post 端口；
+    # 同一字段的读前态与写后态是两个不同端口，更新后的值不会冒充调用前输入。
+    field_ports_used: dict[str, set[str]] = {}
+    field_order: list[str] = []
+    for tid in sorted(cache_tids):
+        fam_field = _cache_field_tid(tid)
+        if fam_field is None:
+            continue
+        fam, fkey = fam_field
+        fid = f"f:{fam}:{fkey}"
+        producers_in = [p for p in producers.get(tid, [])
+                        if phase["operators"][p]["id"] in op_ids]
+        consumers_in = [c for c in consumers.get(tid, [])
+                        if phase["operators"][c]["id"] in op_ids]
+        if not producers_in and not consumers_in:
+            continue
+        ports = field_ports_used.setdefault(fid, set())
+        if fid not in field_order:
+            field_order.append(fid)
+        label = _tensor_label(tid, tensors)
+        href = f"#t-{phase['id']}-{tid}"
+        # 时态端口由「阶段内是否已产出该状态」决定：调用前状态才进 pre 端口；
+        # 已产出（本组或组外）的调用后/视图值只能进 post/view 端口，绝不冒充前态。
+        produced_anywhere = bool(producers.get(tid))
+        if produced_anywhere:
+            port = _cache_port_of(tid)
+            for p in producers_in:
+                oid = phase["operators"][p]["id"]
+                ports.add(port)
+                edges.append(_edge(
+                    f"op:{oid}", f"{fid}#{port}", "cache",
+                    ("产出本次读视图：" if port == "view" else "写调用后状态：") + label,
+                    _cond_label(oid, phase), href, tid))
+            for c in consumers_in:
+                cid = phase["operators"][c]["id"]
+                ports.add(port)
+                edges.append(_edge(
+                    f"{fid}#{port}", f"op:{cid}", "cache",
+                    f"本次读视图：{label}", "", href, tid))
+        else:
+            ports.add("pre")
+            for c in consumers_in:
+                cid = phase["operators"][c]["id"]
+                edges.append(_edge(
+                    f"{fid}#pre", f"op:{cid}", "cache",
+                    f"读调用前状态：{label}", "", href, tid))
+    for fid in field_order:
+        fam, fkey = fid[2:].split(":", 1)
+        nodes[fid] = _field_node(fam, fkey, sorted(field_ports_used[fid]))
+
+    graph: dict = {"id": group["id"], "title": group["title"],
+                   "nodes": list(nodes.values()), "edges": _dedup_edges(edges),
+                   "phase": phase["id"]}
+    if field_ports and field_order:
+        fams = sorted({fid[2:].split(":", 1)[0] for fid in field_order})
+        _attach_store_layout(phase, ops, graph, field_order)
+        graph["frames"] = [
+            {
+                "id": f"frame:store:{fam}",
+                "label": "持久状态存储",
+                "sub": ("past_key_values.layers[layer_idx] : DeepseekV4CSACache"
+                        + (" · HF :156-294" if fam == "main" else " · CSA :626-690")),
+                "children": [fid for fid in field_order
+                             if fid[2:].split(":", 1)[0] == fam],
+                "style": "store",
+            }
+            for fam in fams
+            if any(fid[2:].split(":", 1)[0] == fam for fid in field_order)
+        ]
+    return graph
+
+
+def _field_node(family: str, field_key: str, ports: list[str]) -> dict:
+    """载体字段行：字段名属于存储框内部；ports 决定该行暴露的时态端口。"""
+    spec = next((s for s in _CACHE_FIELD_SPECS[family] if s[0] == field_key), None)
+    if spec is None:
+        label, sub = field_key, f"{family} 字段"
+    else:
+        _key, label, sub = spec
+    key = "compressor" if family == "csa" else ("indexer" if family == "indexer" else None)
+    if family == "main" and field_key == "cumlen":
+        # 真实 HF 属性是 self.cumulative_length（modeling_deepseek_v4.py:196-197），
+        # 内部展示键 main.cumlen / JSON cache_cumlen 不变。
+        owner = "past_key_values.layers[layer_idx].cumulative_length"
+    elif family == "main" and field_key == "full":
+        # full 是 update 的局部返回变量（:197-201），不是 Cache 的持久字段：
+        # 它只以“本次读视图/不持久”身份出现在视图端口，不冒充存储属性。
+        owner = ("DeepseekV4CSACache.update 返回的局部 full（本次读视图，不持久；"
+                 "不是 past_key_values 的 Cache 字段）")
+    else:
+        owner = f"past_key_values.layers[layer_idx].{field_key}"
+        if key:
+            owner += f"['{key}']"
+    return {
+        "id": f"f:{family}:{field_key}", "kind": "field",
+        "label": label, "sub": sub, "w": _W_FIELD, "wrap": 26,
+        "ports": ports, "href": "", "title": owner,
+    }
+
+
+_COMPRESSOR_OPTIONS = (
+    ("ctl:csa", "compressed_sparse_attention", "DeepseekV4CSACompressor · 当前生效（layer_idx=4）", True),
+    ("ctl:hca", "heavily_compressed_attention", "DeepseekV4HCACompressor（无 Indexer）· 未展开", False),
+    ("ctl:swa", "sliding_attention", "None（SWA 无压缩器）· 未展开", False),
+)
+
+
+def build_csa_composite_graph(phase: dict, csa_group: dict, indexer_group: dict) -> dict:
+    """CSA 详细阅读：真父子嵌套容器（CSA ⊃ Indexer）+ 图内三选一配置 + 字段端口。
+
+    CSA 与 Indexer 是同一模块内的子模块（HF :618 创建 self.indexer、:690 调用），
+    不是两个平级章节：CSA 容器包住自身的算子/存储字段，并把 Indexer 子图作为
+    嵌套容器放在其内部下方。配置选择是控制流（COMPRESSOR_CLASSES 三选一），
+    用控制线/实例化线与 tensor/cache 线区分；未生效的 HCA/SWA 只诚实标注未展开，
+    不伪装切换。所有包含边界只是导航/归类，不冒充计算算子。
+    """
+    csa = build_module_graph(phase, csa_group, field_ports=True)
+    idx = build_module_graph(phase, indexer_group, field_ports=True)
+    nodes: dict[str, dict] = {n["id"]: dict(n) for n in csa["nodes"]}
+    edges: list[dict] = [dict(e) for e in csa["edges"]]
+    positions: dict[str, tuple[int, float]] = dict(csa.get("positions", {}))
+    k_offset = max((c for c, _ in positions.values()), default=0) + 1
+    id_map: dict[str, str] = {}
+    for n in idx["nodes"]:
+        nid = n["id"]
+        new_id = "pi:" + nid[2:] if nid.startswith("t:") else nid
+        id_map[nid] = new_id
+        if nid.startswith("f:") and new_id in nodes:
+            ports = set(nodes[new_id].get("ports") or []) | set(n.get("ports") or [])
+            nodes[new_id]["ports"] = sorted(ports)
+            continue
+        nn = dict(n)
+        nn["id"] = new_id
+        nodes[new_id] = nn
+        pos = idx.get("positions", {}).get(nid)
+        if pos is not None:
+            layer, row = pos
+            # Indexer 子图整体下移到 CSA 之后；与 CSA 共享的存储字段保留
+            # CSA 存储列里的原位置（上面已按 id 合并）。
+            positions[new_id] = (layer + k_offset, row)
+
+    def _remap(ref: str) -> str:
+        base, sep, port = ref.partition("#")
+        return id_map.get(base, base) + (sep + port if sep else "")
+
+    for e in idx["edges"]:
+        ee = dict(e)
+        ee["src"] = _remap(e["src"])
+        ee["dst"] = _remap(e["dst"])
+        edges.append(ee)
+
+    # ---- 图内配置选择：COMPRESSOR_CLASSES[config.layer_types[layer_idx]] ----
+    selector_ids: list[str] = []
+    nodes["ctl:config"] = {
+        "id": "ctl:config", "kind": "control",
+        "label": "config.layer_types[layer_idx]", "wrap": 26,
+        "sub": '= "compressed_sparse_attention"（layer 4）', "w": 236, "wrap": 26,
+        "href": "", "title": "COMPRESSOR_CLASSES 选择依据 · HF :745-749",
+    }
+    positions["ctl:config"] = (-3, 1.0)
+    selector_ids.append("ctl:config")
+    for k, (oid, key, sub, active) in enumerate(_COMPRESSOR_OPTIONS):
+        nodes[oid] = {
+            "id": oid, "kind": "controlopt", "active": active,
+            "label": key, "sub": sub, "w": 208, "wrap": 22,
+            "href": "", "title": f"COMPRESSOR_CLASSES['{key}'] · HF :745-749",
+        }
+        positions[oid] = (-2, float(k))
+        selector_ids.append(oid)
+        edges.append({"src": "ctl:config", "dst": oid, "kind": "control",
+                      "label": "控制选择", "cond": "", "href": "",
+                      "title": f"COMPRESSOR_CLASSES['{key}']"})
+    edges.append({"src": "ctl:csa", "dst": "frame:csa", "kind": "control",
+                  "label": "实例化 self.compressor（控制线，非 tensor）",
+                  "cond": "", "href": "", "title": "HF :794-795",
+                  "src_side": "bottom", "dst_side": "top", "span_hint": 2})
+
+    csa_ops = [f"op:{o['id']}" for o in csa_group["ops"]]
+    idx_ops = [f"op:{o['id']}" for o in indexer_group["ops"]]
+    csa_fields = [n["id"] for n in csa["nodes"] if n["id"].startswith("f:csa:")]
+    idx_fields = [n["id"] for n in idx["nodes"] if n["id"].startswith("f:indexer:")]
+    # 同一持久 Cache 对象的两个键各自成组：字段重新回到明确的存储载体边界内，
+    # self.buffer_*/compressed_kv/... 的 owner 是 past_key_values.layers[layer_idx]
+    # 的 DeepseekV4CSACache（'compressor' / 'indexer' 键），不是 Compressor/Indexer。
+    frames = [
+        {"id": "frame:selector", "style": "config",
+         "label": "压缩器配置选择（控制流，非 tensor）",
+         "sub": "COMPRESSOR_CLASSES[config.layer_types[layer_idx]] · HF :745-749 / :776",
+         "children": selector_ids},
+        {"id": "frame:store:indexer", "style": "store",
+         "label": "持久状态存储 · 'indexer' 键",
+         "sub": "past_key_values.layers[layer_idx] : DeepseekV4CSACache（同一对象）",
+         "children": idx_fields},
+        {"id": "frame:indexer", "style": "indexer",
+         "label": "Lightning Indexer（self.indexer）",
+         "sub": 'HF :618 创建 / :690 调用 · 键独立 "indexer" · 打分/topk/块偏置',
+         "children": idx_ops + ["frame:store:indexer"]},
+        {"id": "frame:store:csa", "style": "store",
+         "label": "持久状态存储 · 'compressor' 键",
+         "sub": "past_key_values.layers[layer_idx] : DeepseekV4CSACache（同一对象）",
+         "children": csa_fields},
+        {"id": "frame:csa", "style": "csa",
+         "label": "CSA Compressor（DeepseekV4CSACompressor）",
+         "sub": ":794-795 创建 self.compressor · 包含 Lightning Indexer",
+         "children": csa_ops + ["frame:store:csa", "frame:indexer"]},
+    ]
+    return {"id": "attn_csa_nested", "title": csa_group["title"],
+            "nodes": list(nodes.values()), "edges": _dedup_edges(edges),
+            "phase": phase["id"], "positions": positions, "frames": frames}
+
+
+def _op_ranks(phase: dict, ops: list[dict]) -> dict[str, int]:
+    """组内算子的纵向层级：真实张量 producer→consumer 最长路径（不按顺序号）。"""
+    ids = {o["id"] for o in ops}
+    consumers = _consumers(phase)
+    layer = {oid: 0 for oid in ids}
+    pairs: list[tuple[str, str]] = []
+    for op in phase.get("operators", []):
+        if op["id"] not in ids:
+            continue
+        for tid in op.get("outputs", []):
+            for c in consumers.get(tid, []):
+                cid = phase["operators"][c]["id"]
+                if cid in ids and cid != op["id"]:
+                    pairs.append((op["id"], cid))
+    for _ in range(len(ids) + 1):
+        changed = False
+        for src, dst in pairs:
+            if layer[dst] < layer[src] + 1:
+                layer[dst] = layer[src] + 1
+                changed = True
+        if not changed:
+            break
+    return layer
+
+
+def _attach_store_layout(phase: dict, ops: list[dict], graph: dict,
+                         field_order: list[str]) -> None:
+    """显式布局：算子列在左、外部输入/权重端口在左侧栏、载体字段在右侧存储列。
+
+    存储列是载体框内部，字段逐行排列（按真实写入/读取所在的算子层就近对齐，
+    同层字段顺序下移一行），读/写线端点因此落在具体字段行上。
+    """
+    ranks = _op_ranks(phase, ops)
+    positions: dict[str, tuple[int, float]] = {}
+    for op in ops:  # 同层多算子按文档序横排（真实并列，不串成顺序）
+        layer = ranks[op["id"]]
+        row = sum(1 for o in ops
+                  if ranks[o["id"]] == layer and
+                  ops.index(o) < ops.index(op))
+        positions[f"op:{op['id']}"] = (layer, float(row))
+    left_used: dict[int, int] = {}
+    right_used: dict[int, int] = {}
+    for e in graph["edges"]:
+        src = e["src"].split("#", 1)[0]
+        dst = e["dst"].split("#", 1)[0]
+        if src.startswith("t:") and dst.startswith("op:"):
+            layer = ranks[dst[3:]]
+            if src not in positions:
+                k = left_used.get(layer, 0)
+                left_used[layer] = k + 1
+                positions[src] = (layer, -(1.0 + 0.55 * k))
+        elif src.startswith("op:") and dst.startswith("t:"):
+            layer = ranks[src[3:]]
+            if dst not in positions:
+                k = right_used.get(layer, 0)
+                right_used[layer] = k + 1
+                positions[dst] = (layer, 1.0 + 0.55 * k)
+    anchors: dict[str, list[int]] = {}
+    for e in graph["edges"]:
+        src = e["src"].split("#", 1)[0]
+        dst = e["dst"].split("#", 1)[0]
+        if src.startswith("op:") and dst.startswith("f:"):
+            anchors.setdefault(dst, []).append(ranks[src[3:]])
+        elif src.startswith("f:"):
+            anchors.setdefault(src, [])
+    order = sorted(field_order,
+                   key=lambda f: (min(anchors.get(f) or [0]),
+                                  field_order.index(f)))
+    max_row = max([r for _, r in positions.values()] + [0.0])
+    store_col = max_row + 1.0
+    last_layer = -1
+    used_layers = set()
+    for fid in order:
+        anchor = min(anchors.get(fid) or [0])
+        layer = max(anchor, last_layer + 1)
+        while layer in used_layers:
+            layer += 1
+        positions[fid] = (layer, store_col)
+        used_layers.add(layer)
+        last_layer = layer
+    graph["positions"] = positions
+
+
+# 总览的显式布局：层 = 自上而下的真实主数据流；列 = 同层真实并列支路
+# （Attention 的 Q / 共享 KV / CSA→Indexer 三支并排，缓存载体就近，接入通路）。
+_OVERVIEW_POS: dict[str, tuple[int, float]] = {
+    "hidden_streams_in": (0, 0.0),
+    "position_ids": (0, 1.0),
+    "input_ids": (0, 2.0),
+    "mhc_attn": (1, 0.0),
+    "norm_attn": (2, 0.0),
+    "attn_q": (3, 0.0),
+    "attn_kv": (3, 1.0),
+    "attn_csa": (3, 2.0),
+    "attn_mask": (4, 0.0),
+    "attn_cache": (4, 1.0),
+    "attn_indexer": (4, 2.0),
+    "c:main": (6, 0.45),
+    "attn_core": (5, 1.0),
+    "c:csa": (4, 3.0),
+    "c:indexer": (5, 3.0),
+    "attn_out": (6, 1.0),
+    "res_attn": (7, 0.0),
+    "mhc_ffn": (8, 0.0),
+    "norm_ffn": (9, 0.0),
+    "moe_route": (10, 0.0),
+    "moe_shared": (10, 1.0),
+    "moe_expert": (11, 0.0),
+    "moe_merge": (12, 0.0),
+    "res_ffn": (13, 0.0),
+    "hidden_streams_out": (14, 0.0),
+}
+
+# 仅 Decoder 总览使用的展开留白（不影响 34 张模块详图）
+_OVERVIEW_SPACING = {"col_extra": 96.0, "row_extra": 52.0, "frame_extra": 34.0}
+
+_OVERVIEW_FRAMES = (
+    ("frame:attention", "Attention（DeepseekV4Attention）",
+     ":794-795 创建 self.compressor；包含 CSA → Indexer",
+     "attn",
+     ("m:attn_q", "m:attn_kv", "m:attn_csa", "m:attn_indexer", "m:attn_cache",
+      "m:attn_mask", "m:attn_core", "m:attn_out", "c:main", "c:csa", "c:indexer",
+      "frame:csa")),
+    ("frame:csa", "CSA Compressor（DeepseekV4CSACompressor）",
+     ":618 创建 self.indexer、:690 调用（父模块）", "csa",
+     ("m:attn_csa", "frame:indexer")),
+    ("frame:indexer", "Lightning Indexer（self.indexer）",
+     "打分 / topk / 块偏置（分组键独立）", "indexer", ("m:attn_indexer",)),
+)
 
 
 def build_overview_graph(phase: dict, rules=None) -> dict:
-    """Decoder 总览：模块框 + 边界/缓存节点；聚合边逐条由真实张量支撑。
+    """Decoder 总览：模块框 + 真实包含容器 + 缓存载体 + 长连接同名接口。
 
-    每条聚合边 (src, dst) 都能从文档找到至少一个张量：其 producer 属 src
-    （或 src 为边界/缓存节点）且 consumer 属 dst；组内连接留给模块详图。
+    聚合边逐条由真实张量支撑（producer 属 src、consumer 属 dst），方向不变；
+    同层并列支路按列展开（不串成假顺序）；缓存载体作为"持久状态存储"接入
+    Attention/CSA/Indexer 计算通路；跨多层的残差/来源类长连接改为少量成对的
+    同名接口（来源端 ▸ 名称 / 去向端 名称 ▸），避免长线互相压盖，
+    同时保留完整依赖（两条 stub 边各自保留原张量清单与方向）。
     """
     tensors = _tensor_map(phase)
     producers = _producers(phase)
@@ -352,14 +800,18 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
         for op in g["ops"]:
             op_group[op["id"]] = g["id"]
 
+    positions: dict[str, tuple[int, float]] = {}
     nodes: dict[str, dict] = {}
     for g in groups:
+        sub_txt = f"导航 · {len(g['ops'])} 算子"
         nodes[f"m:{g['id']}"] = {
             "id": f"m:{g['id']}", "kind": "nav", "label": g["title"],
-            "sub": f"导航 · {len(g['ops'])} 算子",
+            "sub": sub_txt,
             "href": f"#mod-{phase['id']}-{g['id']}",
             "title": "，".join(op["id"] for op in g["ops"]),
         }
+        if g["id"] in _OVERVIEW_POS:
+            positions[f"m:{g['id']}"] = _OVERVIEW_POS[g["id"]]
     for tid in ("hidden_streams_in", "input_ids", "position_ids", "hidden_streams_out"):
         if tid in tensors:
             nodes[f"t:{tid}"] = {
@@ -367,18 +819,25 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
                 "label": tensor_source_label(tid) or tensors[tid]["name"],
                 "sub": tid, "href": f"#t-{phase['id']}-{tid}", "title": tid,
             }
+            if tid in _OVERVIEW_POS:
+                positions[f"t:{tid}"] = _OVERVIEW_POS[tid]
     cache_families_present = {
         _cache_family(tid) for tid, t in tensors.items()
         if (t.get("kind") == "cache" and _cache_family(tid)) or tid == "kv_full"
     }
     for family in ("main", "csa", "indexer"):
         if family in cache_families_present:
-            nodes[f"c:{family}"] = {
-                "id": f"c:{family}", "kind": "navlane", "label": _CACHE_FAMILY_TITLES[family],
-                "sub": "导航 · 调用前→读视图→调用后",
-                "href": f"#cache-{phase['id']}-{family}",
-                "title": _CACHE_FAMILY_TITLES[family],
+            key = f"c:{family}"
+            fields = "，".join(s[1].split("（")[0] for s in _CACHE_FIELD_SPECS[family])
+            nodes[key] = {
+                "id": key, "kind": "carrier",
+                "label": "持久状态存储",
+                "sub": f"{_CACHE_FAMILY_TITLES[family]} · {fields}",
+                "href": "",
+                "title": "past_key_values.layers[layer_idx] : DeepseekV4CSACache · "
+                         f"{_CACHE_FAMILY_TITLES[family]}",
             }
+            positions[key] = _OVERVIEW_POS[key]
 
     agg: dict[tuple[str, str], dict] = {}
     for tid, t in tensors.items():
@@ -390,7 +849,6 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
         if producer_groups:
             src = f"m:{producer_groups[0]}"
             if not consumer_groups:
-                # 层输出/末端张量：仅边界输出画到边界节点（其余末端留给模块详图）
                 if t.get("kind") == "boundary":
                     key = (src, f"t:{tid}")
                     entry = agg.setdefault(key, {"tensors": [], "kinds": set()})
@@ -410,7 +868,6 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
             entry = agg.setdefault((src, dst), {"tensors": [], "kinds": set()})
             entry["tensors"].append(tid)
             entry["kinds"].add(kind)
-    # 缓存写回：产出缓存状态的模块 → 缓存族节点
     for tid, t in tensors.items():
         if t.get("kind") != "cache" or not _cache_family(tid):
             continue
@@ -422,21 +879,144 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
                                        {"tensors": [], "kinds": set()})
                 entry["tensors"].append(tid)
                 entry["kinds"].add("cache")
+
+    group_titles = {f"m:{g['id']}": g["title"] for g in groups}
     edges: list[dict] = []
+    # 先收集长残差/来源类连接（跨多层的真实聚合依赖），再汇总成少量成对同名接口。
+    out_groups: dict[str, list[dict]] = {}
+    in_groups: dict[str, list[dict]] = {}
+    ordinary: list[tuple[tuple[str, str], dict]] = []
     for (src, dst), entry in sorted(agg.items()):
         if src not in nodes or dst not in nodes:
             continue
-        is_cache = entry["kinds"] == {"cache"}
-        names = "，".join(entry["tensors"][:3]) + ("…" if len(entry["tensors"]) > 3 else "")
-        edges.append(_edge(
-            src, dst, "cache" if is_cache else "flow",
-            (f"读写 {len(entry['tensors'])} 状态" if is_cache
-             else f"{len(entry['tensors'])} 张量：{names}"),
-            "", "", "，".join(entry["tensors"])))
+        n = len(entry["tensors"])
+        title = "，".join(entry["tensors"])
+        name = "、".join(
+            tensor_source_label(tid) or tensors.get(tid, {}).get("name", tid)
+            for tid in entry["tensors"][:2])
+        is_cache_set = entry["kinds"] == {"cache"}
+        src_pos = positions.get(src, (0, 0.0))
+        dst_pos = positions.get(dst, (0, 0.0))
+        span = dst_pos[0] - src_pos[0]
+        if is_cache_set:
+            edge_entry = {"src": src, "dst": dst, "kind": "cache",
+                          "label": (f"读前态 {n} 项" if src.startswith("c:")
+                                    else f"写后态 {n} 项"),
+                          "cond": "", "href": "", "title": title}
+            if {src, dst} == {"c:main", "m:attn_cache"}:
+                # 主 KV 载体与缓存更新之间的真实读写线：走载体与 attn_core 之间的
+                # 窄通道，避开无关的 attn_core 计算框（不改为注记）。
+                if src == "c:main":
+                    edge_entry.update(src_side="top", dst_side="left",
+                                      lane_off=97.0)
+                else:
+                    edge_entry.update(src_side="left", dst_side="top",
+                                      lane_off=-11.0)
+            edges.append(edge_entry)
+            continue
+        if src.startswith("m:") and dst.startswith("m:") and entry["kinds"] == {"cache"}:
+            edges.append({"src": src, "dst": dst, "kind": "cache",
+                          "label": f"本次读视图 {n} 项", "cond": "", "href": "",
+                          "title": title})
+            continue
+        iface_ok = (src.startswith("m:") and dst.startswith("m:")) or (
+            src.startswith("t:") and dst == "m:res_attn")
+        if span >= 4 and iface_ok:
+            out_groups.setdefault(src, []).append(
+                {"dst": dst, "name": name, "title": title})
+            in_groups.setdefault(dst, []).append(
+                {"src": src, "name": name, "title": title})
+            continue
+        ordinary.append(((src, dst), entry))
 
+    def _place_iface(layer: int, base_row: float) -> tuple[int, float]:
+        # 同一层已有接口 chip（含来源端/去向端）依次左移一档，绝不重叠。
+        used = sum(1 for c, r in positions.values()
+                   if c == layer and -2.8 < r < base_row + 1e-6)
+        # chip 宽 216 > 0.55 列（194px）：间距至少 0.65 列，避免两个 chip 框重叠
+        return layer, base_row - 0.65 * used
+
+    for src, items in sorted(out_groups.items()):
+        layer, row = _place_iface(int(positions[src][0]),
+                                  positions[src][1] - 0.62)
+        cid = f"if:{src}:out"
+        positions[cid] = (layer, row)
+        names = "、".join(dict.fromkeys(i["name"] for i in items))
+        nodes[cid] = {
+            "id": cid, "kind": "iface", "label": f"▸ {names}",
+            "sub": "去向：" + "、".join(dict.fromkeys(
+                group_titles.get(i["dst"], i["dst"]) for i in items)),
+            "w": 216, "wrap": 17, "href": "",
+            "title": "同名接口（来源端）· " + "；".join(i["title"] for i in items),
+        }
+        for k, item in enumerate(items):
+            edges.append({"src": src, "dst": cid, "kind": "flow", "label": "",
+                          "cond": "", "href": "", "title": item["title"],
+                          "src_side": "left", "dst_side": "right",
+                          "span_hint": 0, "iface_pair": f"{src}->{item['dst']}"})
+    for dst, items in sorted(in_groups.items()):
+        layer, row = _place_iface(int(positions[dst][0]),
+                                  positions[dst][1] - 0.62)
+        cid = f"if:{dst}:in"
+        positions[cid] = (layer, row)
+        names = "、".join(dict.fromkeys(i["name"] for i in items))
+        nodes[cid] = {
+            "id": cid, "kind": "iface", "label": f"{names} ▸",
+            "sub": "来源：" + "、".join(dict.fromkeys(
+                group_titles.get(i["src"], i["src"]) for i in items)),
+            "w": 216, "wrap": 17, "href": "",
+            "title": "同名接口（去向端）· " + "；".join(i["title"] for i in items),
+        }
+        for item in items:
+            # 去向端接口可能排在来源端 chip 外侧：在走廊里向下绕行再进入节点，
+            # 不横穿同层另一个 chip。
+            edges.append({"src": cid, "dst": dst, "kind": "flow", "label": "",
+                          "cond": "", "href": "", "title": item["title"],
+                          "src_side": "right", "dst_side": "left",
+                          "span_hint": 0, "detour": 58.0,
+                          "iface_pair": f"{item['src']}->{dst}"})
+
+    for (src, dst), entry in ordinary:
+        n = len(entry["tensors"])
+        title = "，".join(entry["tensors"])
+        name = "、".join(
+            (tensor_source_label(tid) or tensors.get(tid, {}).get("name", tid)).split("（")[0]
+            for tid in entry["tensors"][:2])
+        label = f"{n} 项：{name}" + ("…" if n > 2 else "")
+        if dst.startswith("m:"):
+            href = f"#mod-{phase['id']}-{dst[2:]}"
+        elif dst.startswith("t:"):
+            href = f"#t-{phase['id']}-{dst[2:]}"
+        else:
+            href = ""
+        edge_entry = {"src": src, "dst": dst, "kind": "flow", "label": label,
+                      "cond": "", "href": href, "title": title}
+        if src == "m:attn_indexer" and dst == "m:attn_mask":
+            edge_entry["detour"] = 58.0
+        if src == "m:attn_q" and dst == "m:attn_out":
+            # 从 q 左缘出发，沿 attn_mask 左侧列间隙下行再进入 out，不穿 mask 框
+            edge_entry["src_side"] = "left"
+            edge_entry["dst_side"] = "top"
+            edge_entry["lane_off"] = -140.0
+        edges.append(edge_entry)
+
+    # 无边界的孤立输入标识（如 input_ids 在本阶段算子中无引用）不画成无标签圆点
+    used_ids = {e["src"].split("#", 1)[0] for e in edges} | \
+               {e["dst"].split("#", 1)[0] for e in edges}
+    for nid in [nid for nid, n in nodes.items()
+                if n["kind"] == "boundary" and nid not in used_ids]:
+        nodes.pop(nid, None)
+        positions.pop(nid, None)
+
+    frames = [
+        {"id": fid, "label": label, "sub": sub, "style": style,
+         "children": list(children),
+         "extra_top": 20 if fid == "frame:attention" else 0}
+        for fid, label, sub, style, children in _OVERVIEW_FRAMES
+    ]
     return {"id": "overview", "title": "Decoder 总览", "nodes": list(nodes.values()),
-            "edges": edges, "phase": phase["id"]}
-
+            "edges": edges, "phase": phase["id"], "positions": positions,
+            "frames": frames, "spacing": dict(_OVERVIEW_SPACING)}
 
 def _cache_role(tid: str, phase: dict, producers: dict[str, list[int]],
                 consumers: dict[str, list[int]], cache_op_ids: set[str]) -> str:
@@ -523,7 +1103,7 @@ def build_cache_graphs(phase: dict, family_rules=None, cache_op_ids=None) -> lis
             continue
         inner_ids = {op["id"] for op in inner_ops}
         base = build_module_graph(phase, {"id": family, "title": _CACHE_FAMILY_TITLES.get(
-            family, family), "ops": inner_ops})
+            family, family), "ops": inner_ops}, field_ports=False)
         nodes = {n["id"]: dict(n) for n in base["nodes"]}
         edges = [dict(e) for e in base["edges"]]
         # 缓存状态节点角色重标（覆盖基底端口的默认 sub），并规范缓存读边标签
@@ -627,16 +1207,34 @@ def _layout(nodes: list[dict], edges: list[dict]) -> dict[str, tuple[int, int]]:
 
 _NODE_W = 172.0
 _NODE_H_MIN = 44.0
+# 缓存字段行（载体框内部）与接口 chip 的显示宽度；字段端点落在字段行左缘。
+_W_FIELD = 236.0
+_H_FIELD = 48.0
+_W_IFACE = 188.0
 # 最小列间隙/行走廊；实际值按本图最宽标签块自适应加宽（render_svg）
 _COL_GAP_MIN = 104.0
 _ROW_GAP_MIN = 22.0
 _PAD = 16.0
 
 
+def _node_width(node: dict) -> float:
+    return float(node.get("w", _NODE_W))
+
+
+def _node_shape(node: dict) -> str:
+    """节点几何形状：框（op/nav/控制/字段/接口 chip）、IO 标识、端口圆点。"""
+    if node["kind"] in ("op", "nav", "carrier", "field", "iface",
+                        "control", "controlopt"):
+        return "box"
+    if node["id"] in ("t:hidden_streams_in", "t:hidden_streams_out"):
+        return "io"
+    return "dot"
+
+
 def _node_lines(node: dict) -> list[str]:
     """框内主行（源码名）：按需换行、无行数上限——用户要求框内源码名完整可见，
     节点高度随行数自适应；不为塞进固定行数而截断真实信息。"""
-    return _wrap(node["label"], 19, max_lines=None)
+    return _wrap(node["label"], int(node.get("wrap", 19)), max_lines=None)
 
 
 def _node_sub_lines(node: dict) -> list[str]:
@@ -647,6 +1245,8 @@ def _node_sub_lines(node: dict) -> list[str]:
 
 def _node_height(node: dict, lines: list[str]) -> float:
     """节点高度容纳实际文字行数与副标题行数，避免重叠/截断。"""
+    if node["kind"] == "field":
+        return _H_FIELD
     sub_lines = _node_sub_lines(node)
     h = 12.0 + 12.0 * len(lines) + (13.0 * len(sub_lines) if sub_lines else 8.0)
     return max(_NODE_H_MIN, h)
@@ -686,21 +1286,39 @@ def _label_block_box(full_label: str) -> tuple[float, float, int]:
     return width, len(lines), 0
 
 
-def render_svg(graph: dict) -> str:
+def render_svg(graph: dict, wide: bool = False) -> str:
     """图结构 → 内嵌 SVG 字符串（节点/边可点击联查原详情锚点）。
 
-    展示层修正：marker id 按图唯一（uid=phase+graph id，避免多图文档重名）；
-    节点高度容纳文字行数；边标签按实际行数占用排布（同列块间最小间距 13px）；
-    标签块被节点矩形阻挡时，在**所属边的真实路径上**反解参数移动到列间隙/
-    行走廊的空闲位置——整块文字不与任何节点矩形相交（无 anchor-only 降级，
-    宽标签不再被后绘节点盖住尾部）；列间隙/行走廊按本图最宽标签块自适应加宽，
-    保证空位容纳完整占用；长跨列（≥3 列）边按序号交替上下弧绕行；
-    画布高度在排布后按实际占用扩展。
+    布局：优先采用 graph["positions"] 的显式 (层, 列)——层=自上而下的主数据流
+    rank，列=同层并列分支的横向位（真实并列展开，不串成顺序）；未给出时按真实
+    张量引用的最长路径自动分层。所有端点按真实几何（框边界/端口圆点/载体字段
+    的时态端口/容器边界）求，不用隐形矩形糊弄。
+
+    容器：graph["frames"] 声明父子嵌套边界（Attention ⊃ CSA ⊃ Indexer、
+    持久状态存储），按子节点/子容器的实际包围盒绘制；容器只表达包含边界，
+    不冒充计算算子、不参与数据流方向。
+
+    渲染顺序：容器 → 边 → 边标签 → 节点；标签整块避让全部真实矩形（节点、
+    字段行、容器表头），并沿所属边的真实路径反解空位；列间隙/行走廊按本图
+    最宽标签块与穿越该走廊的标签堆叠需求自适应。
     """
     uid = html.escape(f"{graph.get('phase', 'p')}-{graph.get('id', 'g')}", quote=True)
-    # 每图自适应留白：列间隙须容纳本图最宽标签块（否则该图加宽），行走廊同理。
-    # 标签块 = 条件行（如有）+ 源码名/shape 换行（最多 3 行）——条件与名称/维度
-    # 都必须可见，不再用 cond 替换 tensor 信息。
+    spacing = graph.get("spacing") or {}
+    nodes = list(graph["nodes"])
+    edges = list(graph["edges"])
+    node_by_id = {n["id"]: n for n in nodes}
+    frame_defs = {f["id"]: f for f in graph.get("frames", [])}
+    explicit = bool(graph.get("positions"))
+    if explicit:
+        positions = dict(graph["positions"])
+        missing = [n for n in nodes if n["id"] not in positions]
+        if missing:
+            base_c = max((c for c, _ in positions.values()), default=0) + 1
+            for k, n in enumerate(missing):
+                positions[n["id"]] = (base_c, float(k))
+    else:
+        positions = _layout(nodes, edges)
+
     def _edge_label_lines(e: dict) -> list[str]:
         cond = e.get("cond", "")
         label = e.get("label", "")
@@ -711,113 +1329,226 @@ def render_svg(graph: dict) -> str:
         return [cond] if cond else []
 
     max_block_w, max_label_lines = 0.0, 0
-    for e in graph["edges"]:
+    for e in edges:
         lines = _edge_label_lines(e)
         if not lines:
             continue
         w = max(sum(10.0 if ord(ch) > 0x2E80 else 5.5 for ch in ln) for ln in lines) + 8.0
         max_block_w = max(max_block_w, w)
         max_label_lines = max(max_label_lines, len(lines))
-    col_gap = max(_COL_GAP_MIN, max_block_w + 10.0)
+    col_gap = max(_COL_GAP_MIN, max_block_w + 10.0) + float(spacing.get("col_extra", 0.0))
+    if wide:
+        col_gap = max(col_gap, 220.0)  # 兼容旧调用：仅加宽列间隙
     col_w = _NODE_W + col_gap
 
-    positions = _layout(graph["nodes"], graph["edges"])
-    lines_by_node = {n["id"]: _node_lines(n) for n in graph["nodes"] if n["id"] in positions}
-    h_by_node = {n["id"]: _node_height(n, lines_by_node[n["id"]])
-                 for n in graph["nodes"] if n["id"] in positions}
+    lines_by_node = {n["id"]: _node_lines(n) for n in nodes}
+    h_by_node = {n["id"]: _node_height(n, lines_by_node[n["id"]]) for n in nodes}
     layers = [c for c, _ in positions.values()]
     min_c, max_c = (min(layers), max(layers)) if layers else (0, 0)
-    # 纵向走廊高度按「穿越该走廊的边数 × 各自标签块高」自适应——
-    # 同列平行边的标签在本条竖直箭头上纵向堆叠时全部容纳。
-    corridor_demand: dict[int, float] = {c: 0.0 for c in range(min_c, max_c + 1)}
-    for e in graph["edges"]:
-        if e["src"] not in positions or e["dst"] not in positions:
+    # 行走廊纵向留白：跨层边标签只落在自己路径中点所在的走廊，按
+    # (走廊, 横向桶) 累计该处真正需要的堆叠高度——不把长边需求重复叠加到
+    # 它穿过的每条走廊（旧实现会把画布撑到上万像素高）。
+    slots = [r for _, r in positions.values()]
+    min_r, max_r = (min(slots), max(slots)) if slots else (0, 0)
+    corridor_demand: dict[tuple[int, int], float] = {}
+    for e in edges:
+        src = e["src"].split("#", 1)[0]
+        dst = e["dst"].split("#", 1)[0]
+        if src not in positions or dst not in positions:
             continue
-        c1 = positions[e["src"]][0]
-        c2 = positions[e["dst"]][0]
+        c1 = positions[src][0]
+        c2 = positions[dst][0]
+        if c1 == c2:
+            continue  # 同层边标签走在横向巷道（by_x 排列），不占行走廊
         lines = _edge_label_lines(e)
         if not lines:
             continue
         block_h = 10.0 + 11.0 * (len(lines) - 1)
-        lo, hi = min(c1, c2), max(c1, c2)
-        for c in range(lo, hi):
-            if c in corridor_demand:
-                corridor_demand[c] += max(13.0, block_h) + 6.0
-    row_gap = max(_ROW_GAP_MIN,
-                  max(corridor_demand.values(), default=0.0),
-                  8.0 + 11.0 * (max_label_lines - 1) + 2.0 + 5.0)
-    slots = [r for _, r in positions.values()]
-    min_r, max_r = (min(slots), max(slots)) if slots else (0, 0)
-    min_r, max_r = (min(slots), max(slots)) if slots else (0, 0)
+        mid_layer = (c1 + c2) / 2.0
+        corr = int(mid_layer)
+        mid_row = (positions[src][1] + positions[dst][1]) / 2.0
+        mid_x = _PAD + (mid_row - min_r) * col_w
+        key = (corr, int(round(mid_x / 200.0)))
+        corridor_demand[key] = corridor_demand.get(key, 0.0) + max(13.0, block_h) + 6.0
+    base_gap = max(_ROW_GAP_MIN, 8.0 + 11.0 * (max_label_lines - 1) + 2.0 + 5.0)
+    corridor_gap: dict[int, float] = {}
+    for c in range(int(min_c), int(max_c) + 1):
+        need = max([v for (cc, _b), v in corridor_demand.items() if cc == c],
+                   default=0.0)
+        corridor_gap[c] = max(base_gap, need) + float(spacing.get("row_extra", 0.0))
+    # 容器表头预留：容器边界从最上层子节点向上留出表头高度，必须在它上方
+    # 的行走廊里预留同等空间，否则表头会压到上一层不属于该容器的模块框。
+    def _frame_top_layer(fid: str) -> int | None:
+        f = frame_defs.get(fid)
+        if not f:
+            return None
+        vals: list[int] = []
+        for cid in f.get("children", []):
+            if cid in positions:
+                vals.append(int(positions[cid][0]))
+            elif cid in frame_defs:
+                sub = _frame_top_layer(cid)
+                if sub is not None:
+                    vals.append(sub)
+        return min(vals) if vals else None
+
+    header_by_layer: dict[int, float] = {}
+    for fid, f in frame_defs.items():
+        top_layer = _frame_top_layer(fid)
+        if top_layer is None:
+            continue
+        sub_lines = _wrap(f.get("sub", ""), 42)[:2]
+        header_h = (20.0 + 12.0 * len(sub_lines) + float(f.get("extra_top", 0.0))
+                    + float(spacing.get("frame_extra", 0.0)))
+        header_by_layer[top_layer] = header_by_layer.get(top_layer, 0.0) + header_h
+    for layer, need in header_by_layer.items():
+        corr = layer - 1
+        if corr in corridor_gap:
+            corridor_gap[corr] = max(corridor_gap[corr], need + 10.0)
+    row_gap = max(corridor_gap.values(), default=base_gap)
     # 纵向主阅读：层 = 自上而下 rank（y），层内序 = 横向位（x）。
-    # 每 rank 高度 = 层内最高节点 + 纵向走廊；横向位距容纳节点宽与标签块。
     rank_h: dict[int, float] = {}
     for nid, (c, _) in positions.items():
         rank_h[c] = max(rank_h.get(c, 0.0), h_by_node[nid])
     rank_y: dict[int, float] = {}
     y_cursor = _PAD
-    for c in range(min_c, max_c + 1):
+    for c in range(int(min_c), int(max_c) + 1):
         rank_y[c] = y_cursor
-        y_cursor += rank_h.get(c, _NODE_H_MIN) + row_gap
-    node_height = y_cursor - row_gap + _PAD
+        y_cursor += rank_h.get(c, _NODE_H_MIN) + corridor_gap.get(c, base_gap)
+    node_height = y_cursor - corridor_gap.get(int(max_c), base_gap) + _PAD
     height = node_height
     width = (max_r - min_r + 1) * col_w + 2 * _PAD
 
-    def x_of(r: int) -> float:
+    def x_of(r: float) -> float:
         return _PAD + (r - min_r) * col_w
 
-    # 真实节点几何：计算/导航框（172×h）、IO 标识（172×24）、端口圆点（r=5，
-    # 圆心 (x+10, y+12)）——箭头锚点按实际形状边界求，不再用旧 172px 隐形矩形。
+    # 真实节点几何：框（172×h，宽节点按自身宽度居中）、IO 标识（×24）、
+    # 端口圆点（r=5）、载体字段行（端口在左缘的 pre/post/view 时态位）。
     node_geom: dict[str, dict] = {}
-    for n in graph["nodes"]:
-        if n["id"] not in positions:
-            continue
-        c, r = positions[n["id"]]
+    for n in nodes:
+        nid = n["id"]
+        c, r = positions[nid]
         x = x_of(r)
         y = rank_y[c]
-        if n["kind"] in ("op", "nav", "navlane"):
-            h = h_by_node[n["id"]]
-            node_geom[n["id"]] = {
-                "top": (x + _NODE_W / 2, y), "bottom": (x + _NODE_W / 2, y + h),
-                "left": (x, y + h / 2), "right": (x + _NODE_W, y + h / 2),
-                "cx": x + _NODE_W / 2, "cy": y + h / 2, "shape": "box",
+        shape = _node_shape(n)
+        if shape == "box":
+            w = _node_width(n)
+            h = h_by_node[nid]
+            gx = x + (_NODE_W - w) / 2.0
+            geom = {
+                "top": (gx + w / 2, y), "bottom": (gx + w / 2, y + h),
+                "left": (gx, y + h / 2), "right": (gx + w, y + h / 2),
+                "cx": gx + w / 2, "cy": y + h / 2, "shape": "box",
+                "x": gx, "y": y, "w": w, "h": h,
             }
-        elif n["id"] in ("t:hidden_streams_in", "t:hidden_streams_out"):
-            node_geom[n["id"]] = {
+            if n["kind"] == "field":
+                ports = list(n.get("ports") or [])
+                if len(ports) == 1:
+                    offs = {ports[0]: h / 2}
+                elif len(ports) == 2:
+                    offs = {ports[0]: h * 0.33, ports[1]: h * 0.67}
+                else:
+                    offs = {p: h * (0.26 + 0.24 * k) for k, p in enumerate(ports)}
+                for p, off in offs.items():
+                    py = y + off
+                    geom[f"port:{p}:left"] = (gx, py)
+                    geom[f"port:{p}:right"] = (gx + w, py)
+                    geom[f"port:{p}:top"] = (gx + w / 2, y)
+                    geom[f"port:{p}:bottom"] = (gx + w / 2, y + h)
+                geom["ports"] = offs
+        elif shape == "io":
+            geom = {
                 "top": (x + _NODE_W / 2, y), "bottom": (x + _NODE_W / 2, y + 24),
                 "left": (x, y + 12), "right": (x + _NODE_W, y + 12),
                 "cx": x + _NODE_W / 2, "cy": y + 12, "shape": "io",
+                "x": x, "y": y, "w": _NODE_W, "h": 24,
             }
         else:
             cx, cy = x + 10.0, y + 12.0
-            node_geom[n["id"]] = {
+            geom = {
                 "top": (cx, cy - 6.0), "bottom": (cx, cy + 6.0),
                 "left": (cx - 6.0, cy), "right": (cx + 6.0, cy),
                 "cx": cx, "cy": cy, "shape": "dot",
+                "x": cx - 6.0, "y": cy - 6.0, "w": 12.0, "h": 12.0,
+            }
+        node_geom[nid] = geom
+
+    def anchor(ref: str, side: str) -> tuple[float, float]:
+        base, _, port = ref.partition("#")
+        geom = node_geom[base]
+        if port:
+            return geom.get(f"port:{port}:{side}") or geom[f"port:{port}:left"]
+        return geom[side]
+
+    # 容器（嵌套边界）：包围盒由子节点/子容器实际几何决定；表头在包围盒上方。
+    frame_box: dict[str, tuple[float, float, float, float]] = {}
+    frame_header_h: dict[str, float] = {}
+
+    def _frame_box(fid: str) -> tuple[float, float, float, float] | None:
+        if fid in frame_box:
+            return frame_box[fid]
+        f = frame_defs.get(fid)
+        if f is None:
+            return None
+        xs: list[float] = []
+        ys: list[float] = []
+        xe: list[float] = []
+        ye: list[float] = []
+        for cid in f.get("children", []):
+            if cid in node_geom:
+                g = node_geom[cid]
+                xs.append(g["x"])
+                ys.append(g["y"])
+                xe.append(g["x"] + g["w"])
+                ye.append(g["y"] + g["h"])
+            elif cid in frame_defs:
+                b = _frame_box(cid)
+                if b:
+                    xs.append(b[0])
+                    ys.append(b[1])
+                    xe.append(b[2])
+                    ye.append(b[3])
+        if not xs:
+            return None
+        sub_lines = _wrap(f.get("sub", ""), 42)[:2]
+        header = (20.0 + 12.0 * len(sub_lines) + float(f.get("extra_top", 0.0))
+                  + float(spacing.get("frame_extra", 0.0)))
+        box = (min(xs) - 15.0, min(ys) - header, max(xe) + 15.0, max(ye) + 15.0)
+        frame_box[fid] = box
+        frame_header_h[fid] = header
+        return box
+
+    for fid in frame_defs:
+        _frame_box(fid)
+        if fid in frame_box:
+            x0, y0, x1, y1 = frame_box[fid]
+            node_geom[fid] = {
+                "top": ((x0 + x1) / 2, y0), "bottom": ((x0 + x1) / 2, y1),
+                "left": (x0, (y0 + y1) / 2), "right": (x1, (y0 + y1) / 2),
+                "cx": (x0 + x1) / 2, "cy": (y0 + y1) / 2, "shape": "frame",
+                "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
             }
 
-    def anchor(nid: str, side: str) -> tuple[float, float]:
-        return node_geom[nid][side]
-
-    # 横向巷道中心（同层边标签空位）/ 纵向走廊中心（跨层边标签空位）；
-    # 块放入即完全脱离节点矩形。
+    # 横向巷道中心（同层边标签空位）/ 纵向走廊中心（跨层边标签空位）
     lane_centers: list[float] = []
-    for r in range(min_r + 1, max_r + 1):
+    for r in range(int(min_r) + 1, int(max_r) + 1):
         left = x_of(r - 1) + _NODE_W
         lane_centers.append(left + col_gap / 2)
     corridor_centers: list[float] = []
-    for c in range(min_c, max_c):
-        corridor_centers.append(rank_y[c] + rank_h.get(c, _NODE_H_MIN) + row_gap / 2)
+    for c in range(int(min_c), int(max_c)):
+        corridor_centers.append(rank_y[c] + rank_h.get(c, _NODE_H_MIN)
+                                + corridor_gap.get(c, base_gap) / 2)
     if min_c <= max_c:
-        corridor_centers.append(rank_y[min_c] / 2)
-        corridor_centers.append(rank_y[max_c] + rank_h.get(max_c, _NODE_H_MIN)
-                                + row_gap / 2)
+        corridor_centers.append(rank_y[int(min_c)] / 2)
+        corridor_centers.append(rank_y[int(max_c)] + rank_h.get(int(max_c), _NODE_H_MIN)
+                                + corridor_gap.get(int(max_c), base_gap) / 2)
 
-    # 平行边（同一对节点，含方向相反的读写对）序号与长跨列边序号（用于错位/绕行）
     pair_count: dict[tuple[str, str], int] = {}
-    for e in graph["edges"]:
-        if e["src"] in positions and e["dst"] in positions:
-            key = tuple(sorted((e["src"], e["dst"])))
+    for e in edges:
+        src = e["src"].split("#", 1)[0]
+        dst = e["dst"].split("#", 1)[0]
+        if src in node_geom and dst in node_geom:
+            key = tuple(sorted((src, dst)))
             pair_count[key] = pair_count.get(key, 0) + 1
     pair_idx: dict[tuple[str, str], int] = {}
 
@@ -825,10 +1556,12 @@ def render_svg(graph: dict) -> str:
     edge_pts_all: list[tuple] = []
     label_slots: list[dict] = []
 
-    # 节点矩形（标签遮挡检测）：绘制顺序为边→标签→节点，标签块不得落在矩形内
-    rects = [(x_of(positions[n["id"]][1]), rank_y[positions[n["id"]][0]],
-              _NODE_W, h_by_node[n["id"]])
-             for n in graph["nodes"] if n["id"] in positions]
+    # 标签遮挡检测的矩形：所有真实节点框/端口小方/字段行 + 容器表头条带
+    rects = [(node_geom[n["id"]]["x"], node_geom[n["id"]]["y"],
+              node_geom[n["id"]]["w"], node_geom[n["id"]]["h"])
+             for n in nodes if n["id"] in node_geom]
+    for fid, box in frame_box.items():
+        rects.append((box[0], box[1], box[2] - box[0], frame_header_h.get(fid, 20.0)))
 
     def _bezier(pt0, pt1, pt2, pt3, t):
         mt = 1 - t
@@ -860,7 +1593,6 @@ def render_svg(graph: dict) -> str:
         return None
 
     def _block_free(cx, cy, n_lines, half_w):
-        """标签块（首行基线 cy，向上约 8px、向下 11×(行数-1)+2px）是否不与任何节点矩形相交。"""
         top, bot = cy - 8.0, cy + 11.0 * (n_lines - 1) + 2.0
         for rx, ry, rw, rh in rects:
             if cx + half_w > rx and cx - half_w < rx + rw and bot > ry and top < ry + rh:
@@ -870,95 +1602,149 @@ def render_svg(graph: dict) -> str:
     placed: list[dict] = []
 
     def _free_of_labels(lx, ly, n_lines, half_w):
-        """与已放置标签块保持 13px 块间距：x 区间重叠时，两块的文字占用区间
-        （基线 -8 上沿 / 末行 +2 下沿）须竖直间隔 ≥3px（等价于
-        「下方首行基线 - 上方末行基线 ≥13px」）。避免避让本身引入标签互叠。"""
         top, bot = ly - 8.0, ly + 11.0 * (n_lines - 1) + 2.0
         for p in placed:
             ptop = p["ly"] - 8.0
             pbot = p["ly"] + 11.0 * (len(p["lines"]) - 1) + 2.0
-            if lx + half_w > p["lx"] - p["half_w"] and lx - half_w < p["lx"] + p["half_w"]:
+            if (lx + half_w + 3.0 > p["lx"] - p["half_w"]
+                    and lx - half_w - 3.0 < p["lx"] + p["half_w"]):
                 separated = (top >= pbot + 3.0) or (ptop >= bot + 3.0)
                 if not separated:
                     return False
         return True
 
-    for e in graph["edges"]:
-        if e["src"] not in positions or e["dst"] not in positions:
+    for e in edges:
+        src = e["src"]
+        dst = e["dst"]
+        base_src = src.split("#", 1)[0]
+        base_dst = dst.split("#", 1)[0]
+        if base_src not in node_geom or base_dst not in node_geom:
             continue
-        key = tuple(sorted((e["src"], e["dst"])))
+        key = tuple(sorted((base_src, base_dst)))
         i = pair_idx.get(key, 0)
         pair_idx[key] = i + 1
-        c1, _ = positions[e["src"]]
-        c2, _ = positions[e["dst"]]
-        span = c2 - c1
-        # 纵向主阅读：跨层边 = 源底边 → 目标顶边（自上而下）；
-        # 上行边（如缓存读）= 源顶边 → 目标底边；同层边横向连接。
-        # 方向仍由同 JSON 引用决定，marker 随路径方向自适应。
-        if span > 0:
-            x1, y1 = anchor(e["src"], "bottom")
-            x2, y2 = anchor(e["dst"], "top")
-        elif span < 0:
-            x1, y1 = anchor(e["src"], "top")
-            x2, y2 = anchor(e["dst"], "bottom")
+        # 层差：两端都显式定位时用真实层级；容器端点用 span_hint。
+        if base_src in positions and base_dst in positions:
+            span = int(positions[base_dst][0] - positions[base_src][0])
         else:
-            r1, r2 = positions[e["src"]][1], positions[e["dst"]][1]
-            if r2 >= r1:
-                x1, y1 = anchor(e["src"], "right")
-                x2, y2 = anchor(e["dst"], "left")
+            span = int(e.get("span_hint", 1))
+        side_src = e.get("src_side")
+        side_dst = e.get("dst_side")
+        r1 = positions[base_src][1] if base_src in positions else 0.0
+        r2 = positions[base_dst][1] if base_dst in positions else 0.0
+        long_cross = (abs(span) >= 2 and abs(r2 - r1) >= 0.35
+                      and node_by_id.get(base_src, {}).get("kind") != "field"
+                      and node_by_id.get(base_dst, {}).get("kind") != "field")
+        if side_src is None or side_dst is None:
+            if long_cross:
+                side_src = "bottom" if span > 0 else "top"
+                side_dst = "top" if span > 0 else "bottom"
+            elif span > 0:
+                side_src, side_dst = "bottom", "top"
+            elif span < 0:
+                side_src, side_dst = "top", "bottom"
             else:
-                x1, y1 = anchor(e["src"], "left")
-                x2, y2 = anchor(e["dst"], "right")
-        # marker 箭头头部需留 3px：仅框形终点收缩；圆点端口已按半径偏移
-        if span > 0:
-            end_trim = 3.0 if node_geom[e["dst"]]["shape"] in ("box", "io") else 0.0
-        else:
-            end_trim = 3.0 if node_geom[e["dst"]]["shape"] in ("box", "io") else 0.0
-        # 长跨层边交替左右弧绕行；平行边按序号额外偏移控制点
-        bow = 0.0
-        if abs(span) >= 3:
-            bow = (26.0 if i % 2 == 0 else -26.0) + (8.0 if pair_count[key] > 1 else 0.0)
+                if r2 >= r1:
+                    side_src, side_dst = "right", "left"
+                else:
+                    side_src, side_dst = "left", "right"
+        # 载体字段端点：读/写线一律从字段左缘的时态端口进出（字段行在存储列，
+        # 面向算子列），不从字段顶/底穿出，避免穿过同列其它字段行。
+        src_is_field = node_by_id.get(base_src, {}).get("kind") == "field"
+        dst_is_field = node_by_id.get(base_dst, {}).get("kind") == "field"
+        if src_is_field or dst_is_field:
+            if src_is_field:
+                side_src = "left"
+                side_dst = "right" if not dst_is_field else "left"
+            if dst_is_field:
+                side_dst = "left"
+                side_src = "right" if not src_is_field else "right"
+        x1, y1 = anchor(src, side_src)
+        x2, y2 = anchor(dst, side_dst)
+        end_trim = (0.0 if long_cross or src_is_field or dst_is_field
+                    else (3.0 if node_geom[base_dst]["shape"] in ("box", "io") else 0.0))
+        # 平行边（同一对节点，如读/写）：端点精确不变，用弧线在中段分开。
+        pair_off = 0.0
+        if pair_count.get(key, 1) > 1:
+            n_pair = pair_count[key]
+            pair_off = (i - (n_pair - 1) / 2.0) * 24.0
+        r1 = positions[base_src][1] if base_src in positions else 0.0
+        r2 = positions[base_dst][1] if base_dst in positions else 0.0
+        same_column = abs(r2 - r1) < 0.35
+        # 长跨层边：显式 lane 走线（左侧分道）；同列长边绕开中间计算框；
+        # 其余交替小弧。字段读/写线只在存储列与算子列之间的走廊里走。
         if span != 0:
             mid_y = (y1 + y2) / 2
-            cx1 = x1 + (bow if span > 0 else -bow)
-            cx2 = x2 + (bow if span > 0 else -bow)
             end_y = y2 - (end_trim if span > 0 else -end_trim)
-            pts = ((x1, y1), (cx1, mid_y), (cx2, mid_y), (x2, end_y))
-            path_d = (f"M{x1:g},{y1:g} C{cx1:g},{mid_y:g} {cx2:g},{mid_y:g} "
-                      f"{x2:g},{end_y:g}")
+            if "lane" in e:
+                lane_x = -40.0 - 168.0 * float(e["lane"])
+                pts = ((x1, y1), (lane_x, mid_y), (lane_x, mid_y), (x2, end_y))
+            elif src_is_field or dst_is_field:
+                # 字段读/写：在存储列与算子列之间的走廊里纵向走线
+                pts = ((x1, y1), (x1, mid_y), (x2, mid_y), (x2, end_y))
+            elif same_column and abs(span) >= 2:
+                # 同列长边：沿列侧分道绕开中间计算框
+                lane_x = x1 + (128.0 if i % 2 == 0 else -128.0) + pair_off
+                pts = ((x1, y1), (lane_x, y1), (lane_x, end_y), (x2, end_y))
+            elif long_cross:
+                # 跨多层/隔列的边：在源列旁边的分道竖向下行到目标上方的
+                # 行走廊，再在走廊里横移到目标正上方进入顶边——不斜穿中间层
+                # 的计算框，长边各有分道可区分。
+                lane_x = x1 + float(e.get("lane_off",
+                                         110.0 if x2 > x1 else -110.0)) + pair_off
+                if span > 0:
+                    pts = ((x1, y1), (lane_x, y1 + 6.0),
+                           (lane_x, end_y - 10.0), (x2, end_y))
+                else:
+                    pts = ((x1, y1), (lane_x, y1 - 6.0),
+                           (lane_x, end_y + 10.0), (x2, end_y))
+            else:
+                bow = 26.0 if i % 2 == 0 else -26.0
+                bow += pair_off
+                pts = ((x1, y1), (x1 + bow, mid_y), (x2 + bow, mid_y), (x2, end_y))
+            path_d = (f"M{pts[0][0]:g},{pts[0][1]:g} C{pts[1][0]:g},{pts[1][1]:g} "
+                      f"{pts[2][0]:g},{pts[2][1]:g} {pts[3][0]:g},{pts[3][1]:g}")
         else:
             mid_x = (x1 + x2) / 2
             end_trim_x = end_trim if x2 >= x1 else -end_trim
-            pts = ((x1, y1), (mid_x, y1), (mid_x, y2), (x2 - end_trim_x, y2))
-            path_d = (f"M{x1:g},{y1:g} C{mid_x:g},{y1:g} {mid_x:g},{y2:g} "
-                      f"{x2 - end_trim_x:g},{y2:g}")
-        cls = f"dg-edge {e['kind']}" + (" cond" if e.get("cond") else "")
-        marker_kind = {"flow": "flow", "weight": "weight"}.get(e["kind"], "cache")
+            detour = float(e.get("detour", 0.0))
+            if detour == 0.0 and not (src_is_field or dst_is_field) \
+                    and abs(r2 - r1) >= 1.2:
+                # 同层长跨列边：从行带上方向绕开中间计算框（真实同层依赖）
+                detour = -(rank_h.get(int(positions[base_src][0]), _NODE_H_MIN) / 2.0 + 34.0)
+            # 平行边只在控制点处分开，端点仍精确落在端口/字段时态位上。
+            ex = x2 - end_trim_x
+            if detour:
+                pts = ((x1, y1), (x1, y1 + pair_off + detour),
+                       (ex, y2 + pair_off + detour), (ex, y2))
+            else:
+                pts = ((x1, y1), (mid_x, y1 + pair_off),
+                       (mid_x, y2 + pair_off), (ex, y2))
+            path_d = (f"M{pts[0][0]:g},{pts[0][1]:g} C{pts[1][0]:g},{pts[1][1]:g} "
+                      f"{pts[2][0]:g},{pts[2][1]:g} {pts[3][0]:g},{pts[3][1]:g}")
+        cls = (f"dg-edge {e['kind']}"
+               + (" cond" if e.get("cond") else "")
+               + (" parallel" if pair_count.get(key, 1) > 1 else ""))
+        marker_kind = {"flow": "flow", "weight": "weight", "control": "control"}.get(
+            e["kind"], "cache")
         path = (f'<path class="{cls}" d="{path_d}" '
                 f'marker-end="url(#dg-arr-{marker_kind}-{uid})"/>')
         if e.get("href"):
             path = f'<a href="{html.escape(e["href"])}">{path}</a>'
         edge_parts.append(path)
         edge_pts_all.append(pts)
-        # 标签块 = 条件行（如有，条件样式）+ 源码名/shape 换行——两者都可见
         label_lines = _edge_label_lines(e)
         has_cond = bool(e.get("cond")) and bool(e.get("label"))
         if label_lines and any(ln for ln in label_lines):
             n_lines = len(label_lines)
             half_w = max(sum(10.0 if ord(ch) > 0x2E80 else 5.5 for ch in line)
                          for line in label_lines) / 2 + 4.0
-            # 首行基线使标签块在路径中点竖直居中（块高 8+11(n-1)+2）
             ly0 = 3.0 + 5.5 * (n_lines - 1) - 2.0
-            lx, ly = (x1 + x2) / 2, (y1 + y2) / 2 - ly0 + 0.0
+            mid_lx, mid_ly = _bezier(*pts, 0.5)
+            lx, ly = mid_lx, mid_ly - ly0
             if not (_block_free(lx, ly, n_lines, half_w)
                     and _free_of_labels(lx, ly, n_lines, half_w)):
-                # 沿所属边真实路径反解到列间隙/行走廊空位：整块脱离节点矩形，
-                # 且不与已放置标签互叠。无 anchor-only 降级；间隙/走廊已按
-                # 本图最宽块自适应加宽，空位必然容纳完整占用。
                 cands: list[tuple[float, float]] = []
-                # 标签必须贴近本条边路径：候选全部为「本条边路径上的点」——
-                # 沿路径按 t 扫描采样（纵向边采样 y 走廊 ± 邻近带，同层边采样
-                # x 巷道 ± 邻近带与端点段），不使用横向巷道外置/旁路位置。
                 if span != 0:
                     mid_y0 = (y1 + y2) / 2
                     ys_cand = sorted({round(v, 1) for v in corridor_centers}
@@ -987,7 +1773,6 @@ def render_svg(graph: dict) -> str:
                         for dy in (0.0, 25.0, -25.0, 50.0, -50.0):
                             cands.append((px, py + dy))
                 for px, py in cands:
-                    cand_ly = py + 3.0 - 5.5 * (n_lines - 1) - 2.0 + 2.0
                     cand_ly = py - (5.5 * (n_lines - 1) - 3.0)
                     if _block_free(px, cand_ly, n_lines, half_w) and \
                             _free_of_labels(px, cand_ly, n_lines, half_w):
@@ -1002,12 +1787,8 @@ def render_svg(graph: dict) -> str:
                 "full": full, "half_w": half_w, "span": span,
                 "pts": pts, "nat_lx": (x1 + x2) / 2,
             })
-    # 纵向布局的标签去冲突（标签贴本条箭头，不被横向推离自己的线）：
-    # a) 跨层边（span≠0）：标签归属其边所穿走廊（最近走廊中心 y 带），块在走廊
-    #    内竖直居中；同走廊内 x 区间重叠时纵向向下堆叠（13px 块距）——走廊高度
-    #    已按穿越边数×块高自适应，全部容纳；标签 x 保持在本条竖直箭头附近；
-    # b) 同层边（span=0）：标签在横向巷道（x 反解），同巷道纵向 13px 推让；
-    #    x 区间与相邻标签重叠时横向有限滑移（巷道空位），不远程外置。
+    # 标签去冲突（纵向布局）：跨层边标签归其走廊，同走廊 x 重叠时纵向堆叠；
+    # 同层边标签在横向巷道，纵向 13px 推让。
     by_y: dict[tuple, list[dict]] = {}
     by_x: dict[float, list[dict]] = {}
     for slot in label_slots:
@@ -1029,46 +1810,102 @@ def render_svg(graph: dict) -> str:
             by_x.setdefault(key, []).append(slot)
     max_label_bottom = 0.0
     max_label_right = 0.0
-    for key, slots in by_y.items():
+    for key, slots_ in by_y.items():
         if key[0] == "C":
             cc = key[1]
             y_cursor_lbl = cc - sum(11.0 * (len(x["lines"]) - 1) + 10.0 + 3.0
-                                    for x in slots) / 2.0
-            slots.sort(key=lambda s: s["lx"])
-            for slot in slots:
+                                    for x in slots_) / 2.0
+            slots_.sort(key=lambda s: s["lx"])
+            for slot in slots_:
                 slot["ly"] = y_cursor_lbl + 8.0
                 y_cursor_lbl += 11.0 * (len(slot["lines"]) - 1) + 10.0 + 3.0
-        for slot in slots:
+        for slot in slots_:
             max_label_bottom = max(max_label_bottom,
                                    slot["ly"] + 11.0 * (len(slot["lines"]) - 1) + 2.0)
             max_label_right = max(max_label_right,
                                   slot["lx"] + slot["half_w"])
-    for slots in by_x.values():
-        slots.sort(key=lambda s: s["ly"])
+    for slots_ in by_x.values():
+        slots_.sort(key=lambda s: s["ly"])
         prev_bottom = None
-        for slot in slots:
-            if prev_bottom is not None and slot["ly"] - prev_bottom < 13.0:
-                new_ly = prev_bottom + 13.0
+        for slot in slots_:
+            if prev_bottom is not None and slot["ly"] - prev_bottom < 16.0:
+                new_ly = prev_bottom + 16.0
                 if _block_free(slot["lx"], new_ly, len(slot["lines"]),
                                slot["half_w"]):
                     slot["ly"] = new_ly
-            prev_bottom = slot["ly"] + 11.0 * (len(slot["lines"]) - 1)
-            max_label_bottom = max(max_label_bottom,
-                                   prev_bottom + 2.0)
-            max_label_right = max(max_label_right,
-                                  slot["lx"] + slot["half_w"])
+            prev_bottom = slot["ly"] + 11.0 * (len(slot["lines"]) - 1) + 2.0
+            max_label_bottom = max(max_label_bottom, prev_bottom + 2.0)
+            max_label_right = max(max_label_right, slot["lx"] + slot["half_w"])
+    # 全局去冲突：不同走廊/巷道分组的标签块若二维相交，沿本曲线在最近空位
+    # 重新落位（x 仍从自身曲线反解），再做一次贴曲线 snap——标签始终贴自己的边。
+    def _slot_conflicts(slot, x, y, others):
+        top, bot = y - 8.0, y + 11.0 * (len(slot["lines"]) - 1) + 2.0
+        hw = slot["half_w"]
+        if not _block_free(x, y, len(slot["lines"]), hw):
+            return True
+        for o in others:
+            otop = o["ly"] - 8.0
+            obot = o["ly"] + 11.0 * (len(o["lines"]) - 1) + 2.0
+            # 与相邻标签块至少留 3px 间隙（横向同样按 3px 计），与纵向块距一致
+            if (x + hw + 3.0 > o["lx"] - o["half_w"]
+                    and x - hw - 3.0 < o["lx"] + o["half_w"]):
+                if not (top >= obot + 3.0 or otop >= bot + 3.0):
+                    return True
+        return False
+
+    label_slots.sort(key=lambda s: (s["ly"], s["lx"]))
+    for _ in range(4):
+        moved = False
+        for idx, slot in enumerate(label_slots):
+            t = _t_at(slot["ly"], 1, slot["pts"])
+            if t is not None:
+                slot["lx"] = _bezier(*slot["pts"], t)[0]
+            if not _slot_conflicts(slot, slot["lx"], slot["ly"], label_slots[:idx]):
+                continue
+            best = None
+            for step in range(1, 90):
+                for cand in (slot["ly"] + 16.0 * step, slot["ly"] - 16.0 * step):
+                    t2 = _t_at(cand, 1, slot["pts"])
+                    x2 = _bezier(*slot["pts"], t2)[0] if t2 is not None else slot["lx"]
+                    if not _slot_conflicts(slot, x2, cand, label_slots[:idx]):
+                        best = (x2, cand)
+                        break
+                if best:
+                    break
+            if best:
+                slot["lx"], slot["ly"] = best
+                moved = True
+        label_slots.sort(key=lambda s: (s["ly"], s["lx"]))
+        if not moved:
+            break
     # 最终 snap：标签 ly 确定后，lx 从本条边路径上 y 反解——标签始终贴自己曲线。
-    # by_y 走廊 stack 只改 ly，lx 必须随本条曲线同步更新（否则标签漂离箭头）。
     for slot in label_slots:
         t = _t_at(slot["ly"], 1, slot["pts"])
         if t is not None:
             px, _py = _bezier(*slot["pts"], t)
             slot["lx"] = px
-        # t None（ly 超出路径 y 范围）：保持候选位，这些由走廊高度自适应保证不发生
+    # snap 后终检：极窄间隙里仍可能与相邻标签差 <3px，固定 x 做最后一次纵向
+    # 微移（只动 y，不再改变贴线的 x），保证整块文字互不重叠。
+    for _ in range(3):
+        moved_final = False
+        label_slots.sort(key=lambda s: (s["ly"], s["lx"]))
+        for idx, slot in enumerate(label_slots):
+            if not _slot_conflicts(slot, slot["lx"], slot["ly"], label_slots[:idx]):
+                continue
+            for step in range(1, 45):
+                for cand in (slot["ly"] + 4.0 * step, slot["ly"] - 4.0 * step):
+                    if not _slot_conflicts(slot, slot["lx"], cand,
+                                           label_slots[:idx]):
+                        slot["ly"] = cand
+                        moved_final = True
+                        break
+                if moved_final:
+                    break
+        if not moved_final:
+            break
     height = max(height, max_label_bottom + _PAD)
     width = max(width, max_label_right + _PAD)
-    # 四向画布：全部最终可见内容（标签块/节点/圆点/IO/路径含弧绕/引线）必须
-    # 落在画布内；viewBox 原点与宽高按实际占用 + 四向余量确定。
+    # 四向画布：全部最终可见内容（标签块/节点/字段/容器/路径含弧绕）落在画布内。
     min_x, max_x = 0.0, width
     min_y, max_y = 0.0, height
     for pts in edge_pts_all:
@@ -1082,16 +1919,11 @@ def render_svg(graph: dict) -> str:
         max_x = max(max_x, slot["lx"] + slot["half_w"])
         min_y = min(min_y, slot["ly"] - 8.0)
         max_y = max(max_y, slot["ly"] + 11.0 * (len(slot["lines"]) - 1) + 2.0)
-    for n in graph["nodes"]:
-        if n["id"] not in positions:
-            continue
-        c, r = positions[n["id"]]
-        nx, ny = x_of(r), rank_y[c]
-        nh = h_by_node[n["id"]] if n["kind"] in ("op", "nav", "navlane") else 24.0
-        min_x = min(min_x, nx, nx + _NODE_W)
-        max_x = max(max_x, nx, nx + _NODE_W)
-        min_y = min(min_y, ny, ny + nh)
-        max_y = max(max_y, ny, ny + nh)
+    for nid, g in node_geom.items():
+        min_x = min(min_x, g["x"])
+        max_x = max(max_x, g["x"] + g["w"])
+        min_y = min(min_y, g["y"])
+        max_y = max(max_y, g["y"] + g["h"])
     vb_x, vb_y = min_x - _PAD, min_y - _PAD
     vb_w = (max_x - min_x) + 2 * _PAD
     vb_h = (max_y - min_y) + 2 * _PAD
@@ -1109,11 +1941,29 @@ def render_svg(graph: dict) -> str:
         f'<marker id="dg-arr-cache-{uid}" viewBox="0 0 10 10" refX="9" refY="5" '
         'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
         '<path d="M0,0 L10,5 L0,10 z" class="dg-arr-cache"/></marker>'
+        f'<marker id="dg-arr-control-{uid}" viewBox="0 0 10 10" refX="9" refY="5" '
+        'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+        '<path d="M0,0 L10,5 L0,10 z" class="dg-arr-control"/></marker>'
         "</defs>",
     ]
+    # 容器边界先画（最底层），子容器在父容器之后画（嵌套清晰）。
+    for fid in sorted(frame_box, key=lambda k: (frame_box[k][2] - frame_box[k][0])
+                      * (frame_box[k][3] - frame_box[k][1]), reverse=True):
+        f = frame_defs[fid]
+        x0, y0, x1, y1 = frame_box[fid]
+        sub_lines = _wrap(f.get("sub", ""), 42)[:2]
+        fparts = [f'<g class="dg-frame {html.escape(str(f.get("style", "group")))}">',
+                  f'<rect x="{x0:g}" y="{y0:g}" width="{x1 - x0:g}" '
+                  f'height="{y1 - y0:g}" rx="10"/>',
+                  f'<text class="flabel" x="{x0 + 12:g}" y="{y0 + 17:g}">'
+                  f'{html.escape(f.get("label", ""))}</text>']
+        for k, line in enumerate(sub_lines):
+            fparts.append(f'<text class="fsub" x="{x0 + 12:g}" '
+                          f'y="{y0 + 31 + k * 12:g}">{html.escape(line)}</text>')
+        fparts.append("</g>")
+        parts.extend(fparts)
     parts.extend(edge_parts)
     for slot in label_slots:
-        # 条件行用条件色，其余行（源码名/shape）用常规边标签色——两者都可见
         spans = ""
         for k, line in enumerate(slot["lines"]):
             cls = ' class="elabel-cond"' if slot["cond"] and k == 0 else ""
@@ -1122,57 +1972,74 @@ def render_svg(graph: dict) -> str:
         parts.append(
             f'<text class="elabel" x="{slot["lx"]:g}" y="{slot["ly"]:g}" '
             f'text-anchor="middle">{spans}<title>{html.escape(slot["full"])}</title></text>')
-    for n in graph["nodes"]:
-        if n["id"] not in positions:
+    for n in nodes:
+        nid = n["id"]
+        if nid not in node_geom:
             continue
-        c, r = positions[n["id"]]
-        x = x_of(r)
-        y = rank_y[c]
+        g = node_geom[nid]
+        if g["shape"] == "frame":
+            continue
         title = f'<title>{html.escape(n.get("title", n["label"]))}</title>'
         href = f'<a href="{html.escape(n["href"])}">' if n.get("href") else ""
         href_end = "</a>" if href else ""
-        if n["kind"] in ("op", "nav", "navlane"):
-            # 计算框（op：源码名 + 实际计算类型）或导航框（总览模块/缓存通道，
-            # 虚线，明确不是计算算子）
-            h = h_by_node[n["id"]]
+        if n["kind"] == "field":
+            w, h = g["w"], g["h"]
             body = ""
-            lines = lines_by_node[n["id"]]
+            for k, line in enumerate(lines_by_node[nid]):
+                body += (f'<text class="flabel" x="{40:g}" y="{15 + k * 12:g}">'
+                         f'{html.escape(line)}</text>')
+            for port, off in sorted(g.get("ports", {}).items(), key=lambda kv: kv[1]):
+                body += (f'<circle class="fport" cx="0" cy="{off:g}" r="4"/>'
+                         f'<text class="fportlabel" x="8" y="{off + 3:g}">'
+                         f'{html.escape(_CACHE_PORT_LABELS.get(port, port))}</text>')
+            node = (f'{href}<g class="dg-field" transform="translate({g["x"]:g},{g["y"]:g})">'
+                    f'<rect width="{w:g}" height="{h:g}" rx="6"/>{title}{body}</g>{href_end}')
+        elif n["kind"] in ("op", "nav", "navlane", "carrier", "iface",
+                           "control", "controlopt"):
+            w, h = g["w"], g["h"]
+            body = ""
+            lines = lines_by_node[nid]
             for k, line in enumerate(lines):
-                body += (f'<text class="nlabel" x="{_NODE_W / 2:g}" y="{14 + k * 12:g}" '
+                body += (f'<text class="nlabel" x="{w / 2:g}" y="{14 + k * 12:g}" '
                          f'text-anchor="middle">{html.escape(line)}</text>')
             sub_lines = _node_sub_lines(n)
             for k, sline in enumerate(sub_lines):
-                body += (f'<text class="nsub" x="{_NODE_W / 2:g}" '
+                body += (f'<text class="nsub" x="{w / 2:g}" '
                          f'y="{h - 6 - 13 * (len(sub_lines) - 1 - k):g}" '
                          f'text-anchor="middle">{html.escape(sline)}</text>')
-            node = (f'{href}<g class="dg-node {n["kind"]}" '
-                    f'transform="translate({x:g},{y:g})">'
-                    f'<rect width="{_NODE_W:g}" height="{h:g}" rx="7"/>{title}{body}</g>'
+            cls = f'dg-node {n["kind"]}'
+            if n["kind"] == "controlopt":
+                cls += " active" if n.get("active") else " inactive"
+            fig_attr = ""
+            if n.get("href", "").startswith("#op-") and "cache-" not in uid:
+                fig_attr = f' id="figop-{n["href"][4:]}"'
+            node = (f'{href}<g class="{cls}"{fig_attr} '
+                    f'transform="translate({g["x"]:g},{g["y"]:g})">'
+                    f'<rect width="{w:g}" height="{h:g}" rx="7"/>{title}{body}</g>'
                     f'{href_end}')
-        elif n["id"] in ("t:hidden_streams_in", "t:hidden_streams_out"):
-            # 初始 hidden_states 输入 / 层输出标识：非计算框的显式端口标签
-            node = (f'{href}<g class="dg-port io" transform="translate({x:g},{y:g})">'
-                    f'<rect width="{_NODE_W:g}" height="24" rx="12"/>{title}'
-                    f'<text class="portlabel" x="{_NODE_W / 2:g}" y="16" '
+        elif g["shape"] == "io":
+            node = (f'{href}<g class="dg-port io" transform="translate({g["x"]:g},{g["y"]:g})">'
+                    f'<rect width="{g["w"]:g}" height="24" rx="12"/>{title}'
+                    f'<text class="portlabel" x="{g["w"] / 2:g}" y="16" '
                     f'text-anchor="middle">{html.escape(n["label"])}</text></g>{href_end}')
         else:
-            # tensor/权重/缓存状态端点：小圆点端口（源码名+shape 走箭头标签，
-            # 不再画与计算框相似的矩形）
             node = (f'{href}<g class="dg-dot {n["kind"]}" '
-                    f'transform="translate({x + 10:g},{y + 12:g})">'
+                    f'transform="translate({g["cx"]:g},{g["cy"]:g})">'
                     f'<circle r="5"/>{title}</g>{href_end}')
         parts.append(node)
     parts.append("</svg>")
     return "".join(parts)
 
-
 _LEGEND_ITEMS = (
     ("opbox", "计算算子框（源码名 + 实际计算类型）"),
-    ("navbox", "导航框（总览模块/缓存通道，虚线——非计算算子）"),
-    ("dot", "端口圆点（tensor/权重/缓存状态端点；源码名+shape 在箭头上）"),
+    ("navbox", "导航框（总览模块，虚线——非计算算子）"),
+    ("frame", "容器边界（真实包含：Attention ⊃ CSA ⊃ Indexer；非计算算子）"),
+    ("field", "持久状态存储字段（past_key_values.layers[layer_idx]；左缘读前/写后/视图端口）"),
+    ("dot", "端口圆点（tensor/权重端点；源码名+shape 在箭头上）"),
     ("flow", "数据流（激活/索引/掩码张量，箭头=producer→consumer）"),
     ("weight", "权重/参数引用（虚线；不改变数据流方向）"),
-    ("cache", "缓存状态（点线；调用前读入算子 / 算子写调用后状态）"),
+    ("cache", "缓存读写（点线；端点落在载体字段的读前/写后端口）"),
+    ("control", "控制选择/实例化（虚点线；非 tensor 流）"),
     ("cond", "条件更新（如仅 N_win>0 闭窗时读写 overlap）"),
 )
 
@@ -1197,6 +2064,9 @@ def diagram_css() -> str:
 svg.dg { display: block; min-width: 100%; height: auto; font-family: inherit; }
 .dg-node.op rect { fill: #fcfdfe; stroke: #1f4e79; stroke-width: 1.4; }
 .dg-node.nav rect { fill: #eef3fa; stroke: #1f4e79; stroke-width: 1.6; stroke-dasharray: 7 4; }
+.dg-node.carrier rect { fill: #e8f0e8; stroke: #2d7a3a; stroke-width: 1.8; stroke-dasharray: 9 4; }
+.dg-node.carrier .nlabel { fill: #2d7a3a; }
+.dg-node.carrier .nsub { fill: #2d7a3a; }
 .dg-node.boundary rect { fill: #e9f7f0; stroke: #1e6d4f; stroke-width: 1.4; }
 .dg-node.weight rect { fill: #fdf6ea; stroke: #b08d57; stroke-width: 1.2; stroke-dasharray: 4 3; }
 .dg-node.cache rect { fill: #eaf1fa; stroke: #2b5d8f; stroke-width: 1.4; }
@@ -1222,7 +2092,31 @@ svg.dg { display: block; min-width: 100%; height: auto; font-family: inherit; }
 .dg-edge.cond { stroke-dasharray: 7 4; }
 .dg-arr-flow { fill: #1f4e79; }
 .dg-arr-weight { fill: #b08d57; }
-.dg-arr-cache { fill: #2b5d8f; }/* 边标签随主题成对：浅色主题深字浅晕 / 深色主题浅字深晕，均不依赖节点底色 */
+.dg-arr-cache { fill: #2b5d8f; }
+/* 容器：真实包含边界（Attention ⊃ CSA ⊃ Indexer）与持久状态存储——只表达
+   包含/归类，不是计算算子，不参与数据流方向 */
+.dg-frame rect { fill: none; stroke: #6b7a8c; stroke-width: 1.2; stroke-dasharray: 10 6; }
+.dg-frame.attn rect { stroke: #1f4e79; stroke-width: 1.7; }
+.dg-frame.csa rect { stroke: #7a3b0e; stroke-width: 1.5; }
+.dg-frame.indexer rect { stroke: #6d3f8f; stroke-width: 1.3; }
+.dg-frame.store rect { fill: #eef6ee; stroke: #2d7a3a; stroke-width: 1.6; stroke-dasharray: 9 4; }
+.dg-frame .flabel { font-size: 12px; font-weight: 700; fill: #1f2933; }
+.dg-frame .fsub { font-size: 9.5px; fill: #4a5568; }
+.dg-frame.store .flabel, .dg-frame.store .fsub { fill: #2d7a3a; }
+/* 载体字段行：字段属于存储框内部；左缘 pre/post/view 时态端口是读写线真实端点 */
+.dg-field rect { fill: #f4f9f4; stroke: #2d7a3a; stroke-width: 1.1; }
+.dg-field .flabel { font-size: 10.5px; fill: #1f2933; font-weight: 600; }
+.dg-field .fport { fill: #2d7a3a; stroke: #ffffff; stroke-width: 1; }
+.dg-field .fportlabel { font-size: 7.5px; fill: #2d7a3a; }
+/* 配置选择：控制线（虚点线）与实际 tensor/实例线区分 */
+.dg-node.control rect { fill: #f6f0fa; stroke: #6d3f8f; stroke-width: 1.2; }
+.dg-node.controlopt rect { fill: #fbf7fd; stroke: #6d3f8f; stroke-width: 1.3; }
+.dg-node.controlopt.active rect { fill: #eaf4ec; stroke: #2d7a3a; stroke-width: 2.4; }
+.dg-node.controlopt.inactive rect { stroke-dasharray: 5 4; }
+.dg-node.iface rect { fill: #eef3fa; stroke: #1f4e79; stroke-width: 1.2; stroke-dasharray: 6 3; }
+.dg-edge.control { stroke: #6d3f8f; stroke-dasharray: 9 4; stroke-width: 1.3; }
+.dg-arr-control { fill: #6d3f8f; }
+/* 边标签随主题成对：浅色主题深字浅晕 / 深色主题浅字深晕，均不依赖节点底色 */
 .elabel { font-size: 10px; fill: #33404d; paint-order: stroke; stroke: rgba(246,247,249,0.92); stroke-width: 3px; }
 .elabel-cond { fill: #8f2b4d; font-weight: 700; }
 .dg-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
@@ -1234,6 +2128,9 @@ svg.dg { display: block; min-width: 100%; height: auto; font-family: inherit; }
 .dg-swatch.flow { border-top-style: solid; border-top-color: #1f4e79; }
 .dg-swatch.weight { border-top-style: dashed; border-top-color: #b08d57; }
 .dg-swatch.cache { border-top-style: dotted; border-top-color: #2b5d8f; }
+.dg-swatch.control { border-top-style: dashed; border-top-color: #6d3f8f; }
+.dg-swatch.frame { border-top-style: dashed; border-top-color: #6b7a8c; }
+.dg-swatch.field { border-top-style: solid; border-top-color: #2d7a3a; }
 .dg-swatch.cond { border-top-style: dashed; border-top-color: #8f2b4d; }
 .dg-note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
 @media (prefers-color-scheme: dark) {
@@ -1245,11 +2142,26 @@ svg.dg { display: block; min-width: 100%; height: auto; font-family: inherit; }
   .dg-arr-weight { fill: #d4b183; }
   .dg-edge.cache { stroke: #9fc2e8; }
   .dg-arr-cache { fill: #9fc2e8; }
+  .dg-edge.control { stroke: #c39be0; }
+  .dg-arr-control { fill: #c39be0; }
+  .dg-frame .flabel { fill: #e4e9ee; }
+  .dg-frame .fsub { fill: #b9c4cf; }
+  /* 存储载体框成对配色：暗主题深底(+深绿描边)配浅绿字，不再浅底浅字（1.63） */
+  .dg-frame.store rect { fill: #17301f; stroke: #6cc283; }
+  .dg-frame.store .flabel, .dg-frame.store .fsub { fill: #c3eccd; }
+  /* 非 store 透明容器在真实暗底上改用成对浅色描边（原深蓝/棕/紫对 #1d2126 不足） */
+  .dg-frame rect { stroke: #9aa7b4; }
+  .dg-frame.attn rect { stroke: #7fa8d9; }
+  .dg-frame.csa rect { stroke: #d4b183; }
+  .dg-frame.indexer rect { stroke: #c39be0; }
   .dg-swatch.flow { border-top-color: #7fa8d9; }
   .dg-swatch.weight { border-top-color: #d4b183; }
   .dg-swatch.cache { border-top-color: #9fc2e8; }
+  .dg-swatch.control { border-top-color: #c39be0; }
   .dg-swatch.opbox { border-top-color: #7fa8d9; }
   .dg-swatch.navbox { border-top-color: #7fa8d9; }
+  .dg-swatch.frame { border-top-color: #b9c4cf; }
+  .dg-swatch.field { border-top-color: #8fd0a0; }
   .dg-swatch.dot { border-top-color: #9aa7b4; }
   .elabel { fill: #d9e2ea; stroke: rgba(20,23,27,0.92); }
   .elabel-cond { fill: #ff9a9a; }

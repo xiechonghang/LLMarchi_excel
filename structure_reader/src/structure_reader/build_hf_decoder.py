@@ -61,6 +61,17 @@ _TOOL_SOURCE_RELPATHS = (
     "configs/models/deepseek_v4_flash_0731_hf.json",
 )
 
+_ONNX_TOOL_SOURCES = (
+    "src/structure_reader/onnx_module/__init__.py",
+    "src/structure_reader/onnx_module/modeling.py",
+    "src/structure_reader/onnx_module/builders.py",
+    "src/structure_reader/onnx_module/build.py",
+    "src/structure_reader/onnx_module/view.py",
+    "tools/netron_launcher/main.swift",
+    "tools/netron_launcher/Info.plist",
+    "tools/netron_launcher/setup.sh",
+)
+
 _DELIVERABLES = (
     "README.md",
     "run_manifest.json",
@@ -102,6 +113,7 @@ def run_hf_build(
     project_root: Path,
     layer_index: int = 4,
     model_key: str = "deepseek_v4_flash_0731_hf",
+    onnx_modules: bool = False,
 ) -> tuple[HfBuildResult, dict[str, bytes]]:
     """HF 阅读样板构建：生成全部交付文件字节（不落盘，由 CLI 层 _materialize 提交）。
 
@@ -145,9 +157,74 @@ def run_hf_build(
             + (f"（共 {len(issues)} 条）" if len(issues) > 8 else "")
         )
 
+    # 3.5) 源码快照：读取 SOURCE_FILES 内已有本地源码文本（只读），传给渲染器
+    source_snapshot: dict[str, str] = {}
+    for _key, _relpath in SOURCE_FILES.items():
+        _path = workspace_root / _relpath
+        if _path.is_file() and _path.suffix in (".py", ".json"):
+            try:
+                source_snapshot[_relpath] = _path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                pass
+
+    # 3.8) 可选 ONNX 模块：显式选项才 import onnx/onnxsim（不破坏无依赖的 inspect/原 build）
+    onnx_files: dict[str, bytes] = {}
+    onnx_bundle = None
+    onnx_env = {"enabled": False}
+    if onnx_modules:
+        try:
+            import onnx as _onnx
+            import onnxruntime as _ort
+            from onnxsim import __version__ as _simver
+            from structure_reader.onnx_module.build import build_all as _build_onnx
+        except Exception as exc:  # noqa: BLE001 - 依赖缺失如实拒绝，不降级为假图
+            raise HfBuildError(
+                f"ONNX 依赖不可用（需项目内隔离安装 onnx/onnxsim/onnxruntime）: "
+                f"{type(exc).__name__}: {exc}") from exc
+        _cfg = json.loads((workspace_root / SOURCE_FILES["config.json"]).read_text(encoding="utf-8"))
+        _res = _build_onnx(workspace_root, project_root, document, _cfg)
+        onnx_files = _res["files"]
+        onnx_bundle = _res["bundle"]
+        failed = [(ph, mid) for ph, mods in _res["report"]["modules"].items()
+                  for mid, st in mods.items() if st.get("status") == "failed"]
+        if failed:
+            raise HfBuildError(
+                "ONNX 模块生成失败（不静默跳过）: " + ", ".join(f"{p}/{m}" for p, m in failed[:8]))
+        import ml_dtypes as _mld
+        import numpy as _np
+        import google.protobuf as _pb
+        onnx_env = {"enabled": True, "onnx": _onnx.__version__,
+                    "onnxsim": _simver, "onnxruntime": _ort.__version__,
+                    "numpy": _np.__version__, "protobuf": _pb.__version__,
+                    "ml_dtypes": _mld.__version__,
+                    "opset": 18, "ir_version": 10, "dtype": "float32",
+                    "modules": sum(len(v) for v in onnx_bundle.values())}
+
+    # 5) analysis_id：输入 SHA + 工具源码 SHA + layer_index
+    tool_sources = {}
+    for relpath in _TOOL_SOURCE_RELPATHS:
+        path = project_root / relpath
+        tool_sources[relpath] = _sha256_file(path) if path.is_file() else "MISSING"
+    if onnx_modules:
+        for relpath in _ONNX_TOOL_SOURCES:
+            path = project_root / relpath
+            tool_sources[relpath] = _sha256_file(path) if path.is_file() else "MISSING"
+    identity = {
+        "schema": "structure_reader_hf_build_identity_v1",
+        "model_key": model_key,
+        "layer_index": layer_index,
+        "analysis_path": "eager",
+        "input_sha256": input_shas,
+        "tool_sources": tool_sources,
+        "onnx_modules": onnx_env,
+    }
+    analysis_id = hashlib.sha256(_canonical_bytes(identity)).hexdigest()
+
     # 4) HTML 与 xlsx（同源：同一 document）
     try:
-        html_bytes = render_decoder_page(document)
+        html_bytes = render_decoder_page(document, source_snapshot=source_snapshot,
+                                         onnx_bundle=onnx_bundle,
+                                         candidate_id=analysis_id if onnx_modules else None)
     except DecoderPageError as exc:
         raise HfBuildError(f"HTML 渲染失败: {exc}") from exc
     try:
@@ -160,21 +237,6 @@ def run_hf_build(
         ) from exc
     except ValueError as exc:
         raise HfBuildError(f"xlsx 导出失败（导出器拒绝输入）: {exc}") from exc
-
-    # 5) analysis_id：输入 SHA + 工具源码 SHA + layer_index
-    tool_sources = {}
-    for relpath in _TOOL_SOURCE_RELPATHS:
-        path = project_root / relpath
-        tool_sources[relpath] = _sha256_file(path) if path.is_file() else "MISSING"
-    identity = {
-        "schema": "structure_reader_hf_build_identity_v1",
-        "model_key": model_key,
-        "layer_index": layer_index,
-        "analysis_path": "eager",
-        "input_sha256": input_shas,
-        "tool_sources": tool_sources,
-    }
-    analysis_id = hashlib.sha256(_canonical_bytes(identity)).hexdigest()
 
     # 6) 交付文档
     from structure_reader.rules.deepseek_v4_hf import (
@@ -222,8 +284,10 @@ def run_hf_build(
         "viewer/decoder.html": html_bytes,
         "tables/decoder_reading.xlsx": xlsx_bytes,
     }
+    documents.update(onnx_files)
     doc_hashes = {name: _sha256_bytes(data) for name, data in documents.items()}
-    deliverables = {name: doc_hashes[name] for name in _DELIVERABLES if name in doc_hashes}
+    deliverables = {name: doc_hashes[name] for name in doc_hashes
+                    if name != "run_manifest.json"}
     documents["run_manifest.json"] = _pretty_bytes({
         "schema": "hf_decoder_build_manifest_v1",
         "status": "success",

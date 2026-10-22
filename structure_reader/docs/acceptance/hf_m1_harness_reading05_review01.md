@@ -1,0 +1,15 @@
+# Harness 反馈05初版复核01：核心改动实际落地，三处有限收尾
+
+候选1a061c7f29b78efc567a993505d369f8183b2fc7ac6deb9b5aaa383ab82281b9，Harness App/1017原会话正常完成空闲。
+
+已独立核：36SVG XML合法、150回链/全部id内链唯一、182源码2888行和所有locator指定行与冻结HF一致；512实际边可见tspan与title全文一致（条件的｜由换行替代，不能当截断）。复用原独立graph_expect从不变JSON派生真实方向，按实际几何解析计算框/圆点IO/字段时态端点，不导入产品renderer；34模块图432依赖missing/extra/unresolved/duplicate均0，动态分组含CSA复合，未套旧548或44图数字。新8控制线与2导航聚合方向另记，不冒充432。两个实际build原始stdout/rc同1a06，第二次reused；当前argv文本仅CLI实参未含main调用完整Python命令，不扩强证明。154旧候选保护当前逐项不变，新所有候选共189文件另保护。
+
+用户可见结构已有真实并列/嵌套和cache字段读前/写后/视图、配置三选项。这些成果应保留，不能退回注记版。独立direction_review.py/links_sources.json/directions.json/visible_label_reconciliation.json给具名证据。
+
+仍有限收尾（均原反馈05而非新布局目标）：
+
+1 总览原投诉仍有具名穿框：main载体↔attn_cache两条cache parallel曲线穿过无关attn_core框；attn_q→attn_out路径M515.01,382 C405.01,388 405.01,674 868.01,684穿过attn_mask框。这会遮断路径或误看成依赖，画在框背后不等可追踪。两阶段同类，修这组总览走线，不据全页24启发式采样扩大成新全仓布局任务。crossings.json保存实际路径/被穿框。模块图剩余穿框仅观察，不本次批量新派。
+2 CSA复合图的绿色字段有真实读写端点，但build_csa_composite_graph丢掉原csa/idx的frame:store，仅剩selector/csa/indexer三个边界；字段标题self.buffer_*现在落CSA/self.indexer容器内，缺少cache_layer真实持久对象统一载体边界，容易把self当Compressor/Indexer。把这些字段按compressor/indexer键分别归入同一past_key_values.layers[layer_idx]:DeepseekV4CSACache的存储框/字段组（诚实同一对象），让真实端点属于载体。不能只改绿色/加孤立注记。
+3 暗主题.dg-frame.store rect仍固定浅#eef6ee，但暗主题flabel/fsub改#8fd0a0，实际配对静态对比仅1.63。这重现用户先前浅底浅字问题。成对修store底/字/进入该背景的线marker，不用正确CSS字符串存在代签。其它正确框字颜色保持。非store透明frame在真实dark页面底上是否清楚另按实际decl静态核，不因仅SVG的头less浅body截图误判。
+
+Harness产生的headless Chrome SVG截图只可作静态工程侧参考，不能作为真实候选browser_visual通过。既有file安全限制不因该截图被绕过；后续不再调用headless Chrome/新浏览器/本地服务/CDP试图补浏览器验收，使用实际SVG/静态几何证据即可。browser_visual保持blocked/not_verified，nativeExcel未核，用户阅读pending。

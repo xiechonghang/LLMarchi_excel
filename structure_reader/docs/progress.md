@@ -1,6 +1,53 @@
 # progress：当前HF阅读样板与旧参考实现历史
 
-## 当前执行状态：M1统一迁至OpenCode，旧Claude/pi已由用户停止（2026-10-17，Asia/Shanghai）
+## 当前新增反馈10：表格约束在卡片背景内（2026-10-21）
+
+- 最新完成覆盖本轮处理中：原Harness App1017完成b81c1e8a…，两阶段参数/配置/张量共6表加card内独立滚动容器与长路径/公式换行，不裁剪/隐藏列/缩字。Codex核6完整table markup逐字节同2877、祖先card/phase正确、id/内链保持，5受影响检查rc0；36SVG/72ONNX/144目录文件/三数据/启动器保持，151交付/21源/7输入/两真实build同ID第二次reused与2331旧保护核实。本轮表格静态工程passed，真实浏览器CSS/窄屏/缩放与用户阅读未代签。自动PAUSED、M1待整体确认/M2M3未启。当前入口b81c1e8a7ac0dc931a9f1bed804d0b014e6ec9eb0c88c5f246b6ceec757b6a6c/viewer/decoder.html，[正式复核](acceptance/hf_m1_harness_table10_review01.md)，证据codex_harness_table10_review01/。Harness已空闲，未Git提交/恢复用户删除；不重发旧任务/本地协议不绕过，等新用户阅读反馈。
+
+- 用户截图指出参数符号表超出背景框，已核bare table与长来源路径min-content撑宽。原Harness App1017仅修HTML表格/卡片尺寸、换行和必要内滚动，保完整文本/列/链接、36SVG/72ONNX/三数据/Excel/启动器。基线2877a154，修前193冻结当前0漂移，任务dpsk_harness_table10_01.md已原App1017完整派发并观察进行中（SHAf832498c93f183d5b9f4ada304a95945744255fffdd21304c8a7412094c118ae，2331旧候选保护），保护与截图codex_harness_table10_dispatch01/。不绕过已拒绝浏览器/协议通道，静态与真实阅读分记；M1待整体确认/M2M3未启、自动PAUSED。详[反馈10](acceptance/hf_m1_reading_feedback10.md)。
+
+## 当前新增反馈09：Decoder 总览展开留白（2026-10-21）
+
+- 最新完成覆盖本轮处理中：原Harness App1017完成2877a154…，仅两总览展开，Q/KV/CSA横距181→277，关键纵距77→129/58→110，画布2436×2167；不缩字/不隐藏依赖。Codex核每阶段30节点/44语义边/3容器与全文保持、34详图字节同，7受影响检查rc0；72ONNX/144目录文件/三数据/启动器保持，151交付/21源/7输入/两真实build同新ID第二次reused与2179旧保护已核。本轮总览间距静态工程passed，浏览器/用户阅读未代签；原本地协议点击阻断保持未绕过。自动PAUSED、M1待整体确认/M2M3未启。当前HTML入口2877a154d43fc0dcf8ec34431d5d42ac54b8d440301903c41e182ef0616edc75/viewer/decoder.html，[正式复核](acceptance/hf_m1_harness_spacing09_review01.md)，Codex证据codex_harness_spacing09_review01/。静态QuickLook只用于留白诊断不等浏览器CSS，Harness bbox覆盖过强已限缩，不另扩任务；未Git提交/恢复用户删除，完成空闲等新阅读反馈。
+
+- 用户实际截图反馈总览过挤，要求图展开一点。原Harness App1017仅两阶段总览真实横纵留白/容器表头/分支cache连线标签空间，保纵向/包含关系/真实依赖/其余34详图/72模型/三数据及本地Netron。基线aa581b11，修前194冻结当前0漂移、截图和旧候选保护已存codex_harness_spacing09_dispatch01/，任务dpsk_harness_spacing09_01.md已原App1017完整派发并观察进行中（SHA64fdd51482f720ec9b1fddf7ac5671995217abe95191123d506865722c4e08ad，2179旧候选保护）。自动PAUSED，M1待整体阅读/M2M3未启，反馈08真实点击阻断不代签或绕过。详[反馈09](acceptance/hf_m1_reading_feedback09.md)。
+
+## 当前新增反馈08：本地链接唤起已安装Netron（2026-10-21）
+
+- 最新交付覆盖下方处理中：本地集成已配置：原Harness App1017 High完成aa581b11…，36入口绑定本项目启动器并打开对应简化ONNX；Codex复跑8资产/36真实resolve、151交付/21源/7输入/两真实build与2027旧保护核实，原36SVG/72模型/三数据不变。专用协议已注册，系统只读查询指向准确项目app。实际代点被Browser Use协议安全策略拒绝（仅http/https），未绕过；真实一键打开仍需用户在新版HTML点击确认，不能代签已通过。M1待阅读，自动PAUSED/M2M3未启。当前入口aa581b11774afea16e970dcf042f20a68f54cda1cce28e316bd0484d09bdf552/viewer/decoder.html；[正式记录](acceptance/hf_m1_harness_netron08_review02.md)，证据codex_harness_netron08_review02/。Harness已正常完成空闲，未提交Git/恢复用户删除，不重发旧单。
+
+- 原Harness完成初版6310a56c并空闲；Codex读实际Swift/Info/setup和HTML，注册前发现无条件1.5秒退出会打断已收到URL但尚未完成的Netron启动；原App1017有限fix01已完整派发并观察进行中（SHAddbeaa9987c8266da104776b1d45ca35f88ae00f2fd191a046a47e95539c6889，2027旧候选保护）。只取消已处理URL的无URL退出计时/极小URL常规文件边界及新原始日志，数学/原图不变。尚未注册协议；Codex已通过原生UI启动本机Netron，后续等收尾核代码再注册/真链接。
+
+- 用户实际反馈07网页链接不能一键打开，已安装Netron要求本地可点击打开本机App及对应ONNX。已核/Applications/Netron.app 9.3.2支持onnx文件/无URL协议；本轮原Harness App1017做项目内小启动器和36对应链接，先可审查产物后注册，Codex仅派单验收。保原图/72模型/三数据/Excel与历史，自动PAUSED、M1待确认/M2M3未启。任务dpsk_harness_netron08_01.md已原App1017完整派发并观察进行中（SHAcc484a0f9635c4a8c9166342986598d12d498ecbcc01ef9cd7db23ed57939b28；1875旧候选文件保护），详[反馈08](acceptance/hf_m1_reading_feedback08.md)。
+
+## 当前新增反馈07：ONNX结果通过Netron链接打开（2026-10-21）
+
+- 最新完成（覆盖下方本轮处理中）：原Harness App1017 High正常完成并空闲，候选4a8fc8f1744405df41cbf3f45961285f9708c3a99eada112e47580138d8417be/viewer/decoder.html。Codex核36实际Netron URL解码逐模块sim字节一致、错模块/改字节两有限反例拒绝、108下载0断、7资产检查rc0；原36SVG与032ea有序逐字节同、72模型及144ONNX目录文件/三数据同788ee、1723旧保护0漂移。151交付/18工具源/7输入与原始两真实build同新ID第二次reused已核。不重复数值旧套。原IAB按候选href直接导航，真实decode/moe_merge自动显示Add通路，属性确认ONNX10/opset18/对应phase/module，样例通过；36全开/本地HTML点击CSS未核，不绕过file限制。正式仅展示工程passed及Netron样例通过，[复核与入口](acceptance/hf_m1_harness_netron07_review01.md)，证据codex_harness_netron07_review01/。在线Netron说明清楚，用户阅读待确认；自动PAUSED，M1未最终确认/M2M3未启，未Git提交/恢复用户删除。
+
+- 用户取消并排ONNX阅读图，改为每模块链接自动用Netron打开实际简化结果。原Harness App1017 High继续，Codex仅派单/验收；基线788ee019，保原36SVG、72ONNX/数学源/三数据/Excel与历史；官方hash/data入口有限核实，网页链接明示在线，不发布公共存储、不启本地服务/系统协议、不绕过file限制。任务dpsk_harness_netron07_01.md已原App1017完整派发并观察进行中（SHAd9e4363fab97d45660877bce88bac4f4414a20d7107d0df76ccd8a8330e7390a，1723旧交付保护）；工程与真实Netron自动载入分记，M1未整体确认/M2M3未启，自动PAUSED保持。详[反馈07](acceptance/hf_m1_reading_feedback07.md)。
+
+## 当前新增反馈06：实际ONNX/onnxsim与原图并排（2026-10-21）
+
+- 最新完成（覆盖下方本轮所有处理中）：原DeepSeek Harness App/DeepSeek-V4.1-Flash 1017 High正常完成实际ONNX/onnxsim与并排阅读，当前候选788ee019821817dff2504938f5b51e02b59a2e714a957eff67dc4c3df9ccb975/viewer/decoder.html。Codex核152当前字节/18工具源/7输入、两实际CLI同ID第二次reused、151交付SHA、1419旧保护；36模块原简共72实际ONNX、144文件链接0断/ID内链闭合、8简化器新生节点关联已核。115受影响+额外5不等轴小例已过，当前72模型/数学源字节不变承接数值证据，本轮只复跑7资产检查通过；原36SVG与三数据/Excel逐字节同032ea。正式仅display_static_engineering=passed，详[最终工程复核与入口](acceptance/hf_m1_harness_onnx06_review04.md)，证据codex_harness_onnx06_review04/。FP32无权重阅读特化/语义分组而非sim融合/专家模板/默认mask子集已页面明确；browser_visual=blocked/not_verified、HF数值等价未做、native_excel=not_verified、user_reading=pending。当前反馈工程完成，Harness空闲等阅读反馈；原OpenCode不恢复，自动PAUSED保持，M1未最终确认/M2M3未启，未Git提交或恢复用户删除。
+
+- 最新收尾02复核：原Harness交付3a7f214c282f4043b23a36e3b8b55a983a7cae7d5db88306b57a8d1e4a5c6c7d；Codex复跑115项无skip、额外T3/Nh2/G4等不相等轴5项全过，72原简无重名/144链接0断/36左SVG字节同/三数据同/1267旧保护0漂移。计算修复保留。只剩onnxsim插入2Reshape×4的来源关联，以及页面明确FP32阅读特化/语义分组/专家模板/默认mask子集；详[复核03](acceptance/hf_m1_harness_onnx06_review03.md)。同App1017有限fix03已原同会话完整派发并确认进行中（SHAc584d4828868b54e3e173f15a1cb11333e79529b3e3c7a8977c5ee45dd70d21a，1419旧交付保护），保持计算图字节/复用已过数值检查，M1未最终确认。
+
+- 最新收尾01复核：原Harness交付9b1bc6532fa545febb49407e3b59d62a43654e67f38e7e992635a3cda5bac088并空闲。Codex核144链接0断、72原简无重名、963旧交付未变、三数据旧同及36左SVG逐字节同；新增生产CSA/Indexer/mask小例保留。仍在其余builder发现Attention sink广播/逆RoPE转置/grouped轴、MoE hit/routed形状和选中边界、CSA映射误删，详[复核02](acceptance/hf_m1_harness_onnx06_review02.md)与真实小例证据。仅同一ONNX转换补齐，有限fix02已原App1017完整派发并确认进行中（SHAe76d2366d5e9855d6d3b9936724ca62eaca3d03c1398cec952135ee7cca5ed36，1267旧交付保护），原正确结果不退，M1未最终确认。
+
+- 最新初版复核：原Harness正常完成5b9129483cf89f36e47aaee64caf52fb209253263c5138c410224fda89f61ee0，36原/简模型与并排保留，但Codex真实链接/小合成runtime发现路径全错、节点重名、压缩Slice标量rank、block_bias漏CSA输入及哨兵尾列、窗口offset错误，changes_required。详[复核01](acceptance/hf_m1_harness_onnx06_review01.md)，证据codex_harness_onnx06_review01/。同App1017有限修复dpsk_harness_onnx06_fix01.md已同会话完整派发并确认进行中（SHAdd66f0f7258e47f7d76c78523b1e7c5931e5d6ce279ffd54b1fb86ab23cee898，963旧交付保护）；不改模型/Excel/左SVG，PAUSED保持。
+
+- 用户认可032ea接近预期，但希望更简明的实际ONNX/onnxsim图与对应原图并排，不是重复ONNX样式改图。原Harness App/1017 High会话继续，Codex只派单/验收。已在原Harness App1017 High会话完整派发dpsk_harness_onnx06_assess01.md并确认进行中（SHAd41b4cff36a16ba462e3e3a11143463eb5ebf7f534e022b23fbcd51794a2d717），预期dpsk_harness_onnx06_plan01.md；只先静态核转换覆盖与工具依赖；工作Python缺onnx/onnxsim/onnxruntime，项目隔离安装已获用户明确批准，实施任务dpsk_harness_onnx06_implement01.md（SHA78286fb76c9e8910c5c97e2595247b39e7bab1afcda0152702c8105b2135fca0）已同会话完整派发并确认进行中；先attn_q真实ONNX/onnxsim并排小样再持续覆盖当前18模块，两阶段保真，依赖只项目内、不执行HF或加载权重。模型/权重不执行，原三数据字节保持，旧203候选与46冻结修前已核无漂移；需求/计划授权本次新增单列更新。自动检查PAUSED，M1未最终确认/M2M3未启。详[反馈06](acceptance/hf_m1_reading_feedback06.md)。
+
+## 当前执行状态：反馈05迁至DeepSeek Harness App / DeepSeek-V4.1-Flash 1017（用户2026-10-20明确指令）
+
+- 最新完成（覆盖下方所有处理中）：DeepSeek Harness App / DeepSeek-V4.1-Flash 1017 High正常完成反馈05及两次有限收尾，候选032ea081ea9d5ac048972808edb6b1513c5a0b5ef088ad733cf4543044a12a6e/viewer/decoder.html。Codex实际核7当前字节/13源/7输入、两真实build同ID第二次reused、196旧保护、三数据同e007；98受影响测试rc0，36SVG/34模块432真实方向0错、512可见标签、182源码2888行、150具体框双向匹配，实际父子/12字段归属/配置选择/CSS浅暗配对均核。总览采样穿框0；其它模块18条穿框及宽图留实际阅读，不扩新任务。正式仅display_static_engineering=passed，[最终记录和入口](acceptance/hf_m1_harness_reading05_review03.md)，证据codex_harness_reading05_review03/，当前freeze 46文件SHA4ddfc0445875eecec3aedcd6369f6f874e565626c89b31dc3371be4897b655e5。browser_visual=blocked/not_verified、native_excel=not_verified、user_reading=pending，M1未整体确认/M2M3未启。Harness完成停止等待，原OpenCode角色不恢复；仅新反馈/实际错误才继续同App1017。Codex未直接开发，未Git提交/恢复用户删除，定时检查PAUSED保持。
+
+- 最新执行端变更覆盖下方“等待Codex接手许可”和OpenCode角色派单状态：用户明确不让Codex开发，改由DeepSeek Harness App、DeepSeek-V4.1-Flash 1017执行。已核安装版App/模型1017 High/工作区实际路径；原OpenCode角色空闲退出本轮，不再派旧单。交接[记录](acceptance/hf_m1_harness_handoff01.md)，唯一新任务dpsk_harness_reading05_01.md，修前及154旧保护codex_harness_handoff01/，预期dpsk_harness_reading05_result01.md、新候选/原始logs。Codex只派单复核，模型Excel/历史只读；自动检查PAUSED保持，M1未确认，不启M2/M3。
+- Harness初版1a061c7f正常完成空闲，Codex核36XML/150唯一回链/182源码2888行、512可见标签、34模块/cache432真实端点方向0缺多未定位；真实并列/嵌套/字段端口/配置三选项成果保留。仍有限三点：总览main↔cache穿core/Q→out穿mask、复合CSA丢统一store框字段owner归属、dark store浅底浅字。详[Harness复核01](acceptance/hf_m1_harness_reading05_review01.md)。当前同App/1017有限收尾dpsk_harness_reading05_fix01.md，预期fix_result01/新candidate/真实原始logs；旧所有候选189保护。headless SVG截图不作browser证明，后续不调用换浏览器/服务/CDP补验；自动检查PAUSED，M1仍待用户整体确认。
+- Harness收尾01的92ad3e62已完成，core/mask走线、复合store归属与暗色对比主体关闭，432真实方向仍0错。Codex仅再发现同一展示名生成器把实际cumulative_length误称cumlen、update局部full误称Cache属性，以及总览一条接口stub小范围穿相邻chip（两阶段同类，23点粗采样漏掉）。详[Harness复核02](acceptance/hf_m1_harness_reading05_review02.md)，当前仅同App/1017有限收尾dpsk_harness_reading05_fix02.md，196旧保护含92ad；预期fix_result02/新candidate/真实logs。保当前正确嵌套/12字段/选择/源码回链与数据Excel，不扩其它模块走线。
+
+- 最新用户反馈05覆盖下方“只纵向/仅等待反馈”状态：e007实际阅读仍有7点需改，总览过窄/长线重叠；Attention→CSA→Indexer真实包含；算子源码可点击；缓存载体融入通路并明确读/更新；参数前置；COMPRESSOR_CLASSES当前CSA及HCA/SWA选择可见；算子→具体框双向定位。[反馈05](acceptance/hf_m1_reading_feedback05.md)，需求和计划顶部已同步。源码已核:618/690 Indexer确为CSA内部；:745-749/794-795 SWA=None、CSA/HCA选择，当前layer4实际CSA，HCA无Indexer。不是M1最终确认，旧章节编号不恢复。原粒度/JSON/config/Excel保持。
+- 最新反馈05复核03：原GLM正常完成cda857b2并空闲，仅中间态。Codex实际38SVG XML合法、150回链真实唯一、182源码2888行及多段locator完整、参数前置、13源/manifest交付SHA及三数据同e007、147旧保护未变。仍未完成总览分道/可见来源、真实Attention→CSA→Indexer嵌套、载体字段前读后写端点、图内配置选择；源码按钮182孤立闭a需修，报告fix02两build原始日志不存在不采信。详[复核03](acceptance/hf_m1_reading05_review03.md)，154保护含cda。原GLM初版+两修复仍同核心遗漏，现等待用户是否允许Codex直接接手限定展示文件（此前仅派单/验收角色约定未擅自突破），不重复派同单，不给DeepSeek未完成候选。全部角色空闲，自动检查PAUSED；非新展示最终通过，M1未确认/M2M3未启，未提交未完成产品或用户删除。
 
 - 最新反馈04最终交付：恢复c97页面/全部框格与文字格式，仅图内主数据流横向→纵向；候选e007491617ddae374cb571b6a7e3a75d530a510519a1ed7a5ca647fa47e2fb24/viewer/decoder.html。原DeepSeek正常完成vertical_only_gate/round01并空闲，Codex读取实际adapter/8有限例/原始日志，复跑8例与固定e007均rc0；107冻结/126旧保护当前逐项存在且SHA一致，独立起止比较报告相同，两新检查SHA吻合。548真实端点→JSON0错、168计算主链底→顶向下；44图整块文字/互叠/画布0，628路径画布内、2212链接/132marker闭合。非SVG HTML/节点内部markup/边全文与c97逐字节同，7当前字节/13源/两实际build同ID-reused、三数据同原认可版本。正式仅display_static_engineering=passed，[最终复核和入口](acceptance/hf_m1_vertical_only_gate_review01.md)。
 - 本轮标签直线1208/斜线217px漂离关闭；628自有路径绑定完整核，4cache下游相邻注记块距34px/中心49px如实限制。独立label距离例只证明检测（adapter warning）、ET字样实际有序regex、起止文件为SHA对freeze比较报告而非逐项向量等已校正，Codex更严格markup/ET/当前SHA与有限反例补足，不需再派旧单。三个OpenCode角色均完成停止等待，仅新用户阅读反馈/实际错误/意外产品变更才继续；章节/toc/crumb/cache重排任务撤回。browser_visual=blocked/not_verified、native_excel=not_verified、user_reading=pending，M1整体未确认，M2/M3未启。自动检查原PAUSED保持；不为忙碌新增任务/反复门禁，本轮冗余不改。

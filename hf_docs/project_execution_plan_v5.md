@@ -1,5 +1,31 @@
 # 模型结构阅读实施计划v5：Transformers实现与双阶段阅读
 
+> 反馈10工程交付（2026-10-21）：原Harness App1017完成b81c1e8a…，两阶段参数/配置/张量共6表加card内独立滚动容器与长路径/公式换行，不裁剪/隐藏列/缩字。Codex核6完整table markup逐字节同2877、祖先card/phase正确、id/内链保持，5受影响检查rc0；36SVG/72ONNX/144目录文件/三数据/启动器保持，151交付/21源/7输入/两真实build同ID第二次reused与2331旧保护核实。本轮表格静态工程passed，真实浏览器CSS/窄屏/缩放与用户阅读未代签。自动PAUSED、M1待整体确认/M2M3未启。详[复核与入口](../structure_reader/docs/acceptance/hf_m1_harness_table10_review01.md)。
+
+> 最新反馈10（2026-10-21）：用户截图表格超出card背景，本轮仅修HTML表格宽度/长文本换行与卡片内必要滚动，保完整行列内容/锚点、36图/ONNX/Excel及本地集成。原Harness App1017继续，Codex仅派单验收；详[反馈10](../structure_reader/docs/acceptance/hf_m1_reading_feedback10.md)。真实阅读待确认，自动PAUSED/M2M3未启。
+
+> 反馈09工程交付（2026-10-21）：原Harness App1017完成2877a154…，仅两总览展开，Q/KV/CSA横距181→277，关键纵距77→129/58→110，画布2436×2167；不缩字/不隐藏依赖。Codex核每阶段30节点/44语义边/3容器与全文保持、34详图字节同，7受影响检查rc0；72ONNX/144目录文件/三数据/启动器保持，151交付/21源/7输入/两真实build同新ID第二次reused与2179旧保护已核。本轮总览间距静态工程passed，浏览器/用户阅读未代签；原本地协议点击阻断保持未绕过。自动PAUSED、M1待整体确认/M2M3未启。详[复核及入口](../structure_reader/docs/acceptance/hf_m1_harness_spacing09_review01.md)。
+
+> 最新反馈09（2026-10-21）：按用户总览拥挤截图，仅展开两阶段Decoder总览，增加实际横纵间距/容器标题/连线标签留白，保结构依赖及其余详图、ONNX/Excel/本地Netron集成。继续原Harness App1017，Codex仅派单验收。详[反馈09](../structure_reader/docs/acceptance/hf_m1_reading_feedback09.md)。M1待整体确认、自动PAUSED。
+
+> 反馈08当前交付（2026-10-21）：本地集成已配置：原Harness App1017 High完成aa581b11…，36入口绑定本项目启动器并打开对应简化ONNX；Codex复跑8资产/36真实resolve、151交付/21源/7输入/两真实build与2027旧保护核实，原36SVG/72模型/三数据不变。专用协议已注册，系统只读查询指向准确项目app。实际代点被Browser Use协议安全策略拒绝（仅http/https），未绕过；真实一键打开仍需用户在新版HTML点击确认，不能代签已通过。M1待阅读，自动PAUSED/M2M3未启。详[记录与入口](../structure_reader/docs/acceptance/hf_m1_harness_netron08_review02.md)。
+
+> 最新反馈08（2026-10-21）：用户实测网页链接未能一键打开，已安装本机Netron，改为项目内本地启动器/专用链接唤起已有Netron并打开对应简化ONNX。原App1017继续，仅必要集成，保原图/72模型/三数据；不绕过浏览器安全限制。详[反馈08](../structure_reader/docs/acceptance/hf_m1_reading_feedback08.md)。旧07保留历史，当前未通过/M1待确认，自动PAUSED。
+
+> 反馈07工程交付（2026-10-21）：原Harness App1017完成4a8fc8f1…，并排图改为36个对应简化ONNX的Netron网页入口，原详图/72模型/三数据保持。Codex逐链接字节对应及7资产检查通过，并实测1个Netron自动载入样例；本地HTML真实点击/CSS未核，用户阅读待确认。详[复核与入口](../structure_reader/docs/acceptance/hf_m1_harness_netron07_review01.md)。自动PAUSED，M1未最终确认/M2M3未启。
+
+> 最新反馈07（2026-10-21）覆盖反馈06的并排展示：保留原详图和真实ONNX/onnxsim文件，改为对应模块链接自动在Netron打开简化结果。继续原Harness App1017 High，Codex仅派单验收；不改数学源/ONNX字节/JSON/config/Excel，不启本地服务或系统协议，不绕过file安全限制。详[反馈07](../structure_reader/docs/acceptance/hf_m1_reading_feedback07.md)。M1用户整体确认仍待，自动PAUSED保持。
+
+> 反馈06工程交付（2026-10-21）：已由原Harness App1017 High完成实际ONNX/onnxsim及原图并排，候选788ee019…。当前模块两阶段已生成真实原/简文件，工程复核通过；无真实权重FP32阅读特化、语义分组与实际简化分开，原SVG/三数据/Excel保持。实际阅读与M1整体确认仍待用户，自动检查PAUSED，旧角色不恢复。详[最终复核与入口](../structure_reader/docs/acceptance/hf_m1_harness_onnx06_review04.md)。
+
+> 安装授权更新：用户已答复允许仅项目内隔离安装ONNX/onnxsim及必要依赖；不下载权重、不执行HF，不改全局环境。继续原Harness App1017 High，先实际Q分支样板再覆盖当前模块，详dpsk_harness_onnx06_implement01.md。
+
+> 最新执行修订（反馈06，2026-10-21）：新增实际ONNX/onnxsim简化及对应原详图并排阅读，超出旧“仅HTML图形样式”。继续原Harness App1017 High，Codex只派单验收；先完成静态源码→模块转换覆盖与依赖方案，隔离安装权限待答复，不执行HF/加载权重，不改JSON/config/Excel，不开启M2/M3。详[反馈06](../structure_reader/docs/acceptance/hf_m1_reading_feedback06.md)。
+
+> 执行端更新（用户2026-10-20明确指定）：当前反馈05改交DeepSeek Harness App / DeepSeek-V4.1-Flash 1017；原OpenCode角色空闲，不再承担本轮。Codex仍只派单/验收，不直接开发。原7项范围与模型/Excel/历史只读边界保持，详progress顶部和hf_m1_harness_handoff01.md。
+
+最新执行修订（反馈05）：按[用户7点阅读反馈](../structure_reader/docs/acceptance/hf_m1_reading_feedback05.md)，原GLM在e007上完成总览分道/真实嵌套、源码跳转、缓存载体接入、参数前置、配置选择标注和算子→具体图节点回链；只HTML展示及必要构建来源/身份适配。新候选后Codex逐点核可见成果，再原DeepSeek受影响独立复核。Qwen空闲；保JSON/config/Excel与原粒度，M2/M3未启。当前反馈覆盖下方旧“只纵向”范围限制。
+
 2026-10-20最新执行修订：按[反馈04](../structure_reader/docs/acceptance/hf_m1_reading_feedback04.md)，用户因框格格式不统一/线错位拒绝2c9展示。原GLM回到c97/dfb9612基线，仅做纵向方向转换；撤回反馈03编号等附加展示任务。Codex核c97样式/页内容保留及真实纵向连线后做有限受影响复核，Qwen空闲，M2/M3未启。
 
 2026-10-19最新 M1 阅读修订：用户认可 c97 图清晰度，按[反馈03](../structure_reader/docs/acceptance/hf_m1_reading_feedback03.md)新增上→下纵向结构图及真实模块包含关系的章节编号。原 GLM 仅修改 HTML 图布局/章节导航，Codex 核新候选后原 DeepSeek 做受影响展示复验；Qwen 保持空闲。保留 JSON/Excel/粒度与现有正确图义，M2/M3 等 M1 最终阅读明确确认。
