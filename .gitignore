@@ -11,6 +11,15 @@
 # Generated deliveries and temporary execution records
 /structure_reader/outputs/
 /structure_reader/.work/
+/outputs/
+/.work/
+/.archify/
+/E01-verify/
+
+# Task evidence, screenshots and local source snapshots (plans stay versioned)
+/docs/tasks/*/*/
+/docs/tasks/*/*.png
+/docs/tasks/*/*.txt
 
 # Python environments and build/cache files
 .venv/

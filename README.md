@@ -36,19 +36,24 @@ python scripts/download_hf_model.py \
 
 ## 生成 HTML 与 Excel
 
+推荐用分层入口一次生成 DeepSeek 的浏览页与两张 Excel：
+
 ```bash
 python structure_reader/scripts/read_model_structure.py build-hf \
-  --model deepseek_v4_flash_0731_hf --layer-index 4
+  --model deepseek_v4_flash_0731_hf --all-variants
 ```
 
-命令会打印本次输出目录及 HTML 入口。主要结果位于 `structure_reader/outputs/deepseek_v4_flash_0731_hf/<analysis_id>/`：
+命令会打印本次输出目录、HTML 入口与每张表的绝对路径。主要结果位于 `structure_reader/outputs/deepseek_v4_flash_0731_hf/<analysis_id>/`：
 
-- `viewer/decoder.html`：离线阅读页，包含纵向结构图、模块包含关系、算子流与源码定位。
-- `tables/decoder_reading.xlsx`：Prefill、Decode 两张工作表。
-- `data/reading_document.json`、`data/effective_config.json`：页面与表格所用的数据和有效配置。
-- `reports/source_manifest.json`、`run_manifest.json`：输入、工具与交付文件身份。
+- `viewer/structure.html`：分层浏览入口（整网 → 层组 → Block → 算子）。
+- `tables/decoder_performance.xlsx`：正式性能表，采用已确认的共用模板布局（Prefill/Decode 两页，参数层校验与活公式；共用 mHC、Q/KV 前置、O/残差按模板只展示一次并乘真实使用次数）。
+- `tables/decoder_variants.xlsx`：兼容阅读表，由旧导出器生成、字节保持不变；与性能表内容身份不同，两表并存。
+- `data/layer_structures.json`、`data/network_overview.json`：两表共用的同一份结构与整网路径。
+- `reports/source_manifest.json`、`run_manifest.json`：输入、工具源码（含性能表导出器）与交付文件身份。
 
-相同输入、工具源码与依赖生成相同内容身份；已有结果会复用，旧候选不会覆盖。
+单层旧入口 `build-hf --model deepseek_v4_flash_0731_hf --layer-index 4` 仍保留，产出 `viewer/decoder.html` 与 `tables/decoder_reading.xlsx`；它是旧阅读接口，不生成新的性能表。
+
+相同输入、工具源码与依赖生成相同内容身份；已有结果会复用，旧候选不会覆盖。新表丢失或损坏时拒绝复用并具名报错，缺 `openpyxl` 时不会降级为 CSV 或悄悄少交付一张表。
 
 ## 可选：ONNX 与 Netron
 

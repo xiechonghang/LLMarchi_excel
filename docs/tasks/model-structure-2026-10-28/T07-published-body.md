@@ -1,0 +1,22 @@
+# 07: Qwen3.8-Flash-Next 语言主干的分层图与结构工作簿
+
+## What to build
+
+用户能分析其指定的 Qwen3.8-Flash-Next 开源模型，查看真实语言主干并导出结构表；模型身份不能用名称相近的其他 Qwen 版本代替。
+
+## Acceptance criteria
+
+- [ ] 模型来源为 https://huggingface.co/Qwen/Qwen3.8-Flash-Next，明确源码实现与配置 revision。
+- [ ] 语言主干的真实层型、状态/缓存和分支与所选源码对应；静态分析、不运行模型、不读取真实权重数值。
+- [ ] 复用已有层级图和工作簿能力，视觉及图像输入路径不分析。
+- [ ] 交付逐级可读 HTML、Prefill/Decode 两页工作簿以及受影响验证结果，明确未覆盖项。
+
+## Blocked by
+
+- https://github.com/xiechonghang/LLMarchi_excel/issues/5
+
+## 执行与阶段结果
+
+实际产品开发由 dsh 执行，Codex 负责派单和复核。优先复用并原位重构既有工程，保护接手前未提交改动，不自动提交或推送。每票提供可打开或可验证的产物、实际测试结果、复用/重构/删除/新增清单及未验证范围；静态工程通过不代签用户阅读验收。
+
+需求已于 2026-10-28 确认，任务拆分已获用户批准。

@@ -1,0 +1,349 @@
+{
+  "state": "in_progress",
+  "repository": "xiechonghang/LLMarchi_excel",
+  "tickets": [
+    {
+      "id": "T01",
+      "title": "统一既有 HF 构建，保留单层与四变体交付",
+      "blocked_by": [],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/01.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 2,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/2",
+        "title": "[T01] 统一既有 HF 构建，保留单层与四变体交付"
+      },
+      "status": "completed",
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T01.json",
+      "review_state": "accepted",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T01-review/acceptance.md",
+      "completed_at": "2026-10-28T14:25:31.380928+08:00"
+    },
+    {
+      "id": "T02",
+      "title": "DeepSeek 整网总览连接真实层组与已有 Block 详图",
+      "blocked_by": [
+        "T01"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/02.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 3,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/3",
+        "title": "[T02] DeepSeek 整网总览连接真实层组与已有 Block 详图"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "all_blockers_closed": true,
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T02.json",
+      "dispatched_at": "2026-10-28T15:21:35.298191+08:00",
+      "review_state": "accepted",
+      "completed_at": "2026-10-28T15:54:25.035699+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T02-review/acceptance.md"
+    },
+    {
+      "id": "T03",
+      "title": "DeepSeek 逐级浏览同一份参数化结构",
+      "blocked_by": [
+        "T02"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/03.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 4,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/4",
+        "title": "[T03] DeepSeek 逐级浏览同一份参数化结构"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "all_blockers_closed": true,
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T03.json",
+      "dispatched_at": "2026-10-28T15:57:25.166171+08:00",
+      "review_state": "accepted",
+      "completed_at": "2026-10-28T16:43:13.984219+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T03-review/acceptance.md"
+    },
+    {
+      "id": "T04",
+      "title": "统一 Excel 导出并提供可填写的分析场景",
+      "blocked_by": [
+        "T03"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/04.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 5,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/5",
+        "title": "[T04] 统一 Excel 导出并提供可填写的分析场景"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "all_blockers_closed": true,
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T04.json",
+      "dispatched_at": "2026-10-28T16:45:20.301316+08:00",
+      "review_state": "accepted",
+      "completed_at": "2026-10-28T17:29:22.190258+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T04-review/acceptance.md"
+    },
+    {
+      "id": "T05",
+      "title": "GLM-5.3 语言主干的分层图与结构工作簿",
+      "blocked_by": [
+        "T04"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/05.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 6,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/6",
+        "title": "[T05] GLM-5.3 语言主干的分层图与结构工作簿"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "all_blockers_closed": true,
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T05.json",
+      "dispatched_at": "2026-10-28T19:46:29.043582+08:00",
+      "review_state": "accepted",
+      "completed_at": "2026-10-29T00:24:26.862406+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T05-review/acceptance.md"
+    },
+    {
+      "id": "T06",
+      "title": "GLM-5.3-Flash 语言主干的分层图与结构工作簿",
+      "blocked_by": [
+        "T04"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/06.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 7,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/7",
+        "title": "[T06] GLM-5.3-Flash 语言主干的分层图与结构工作簿"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "all_blockers_closed": true,
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T06.json",
+      "dispatched_at": "2026-10-29T00:27:50.597212+08:00",
+      "review_state": "accepted",
+      "review_report": "docs/tasks/model-structure-2026-10-28/T06-review/round-1-findings.md",
+      "completed_at": "2026-10-29T10:51:49.616890+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T06-review/acceptance.md"
+    },
+    {
+      "id": "T07",
+      "title": "Qwen3.8-Flash-Next 语言主干的分层图与结构工作簿",
+      "blocked_by": [
+        "T04"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/07.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 8,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/8",
+        "title": "[T07] Qwen3.8-Flash-Next 语言主干的分层图与结构工作簿"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "all_blockers_closed": true,
+      "review_state": "accepted",
+      "dispatched_at": "2026-10-29T10:56:03.448434+08:00",
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T07.json",
+      "review_report": "docs/tasks/model-structure-2026-10-28/T07-review/round-1-findings.md",
+      "completed_at": "2026-10-29T12:40:49.416968+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T07-review/acceptance.md"
+    },
+    {
+      "id": "T08",
+      "title": "HiDream-O1-Image 单次生成网络的分层图与单页工作簿",
+      "blocked_by": [
+        "T04"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/08.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 9,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/9",
+        "title": "[T08] HiDream-O1-Image 单次生成网络的分层图与单页工作簿"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "all_blockers_closed": true,
+      "review_state": "accepted",
+      "dispatched_at": "2026-10-29T12:43:00+08:00",
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T08.json",
+      "review_report": "docs/tasks/model-structure-2026-10-28/T08-review/round-2-findings.md",
+      "completed_at": "2026-10-29T15:29:57.474680+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T08-review/acceptance.md"
+    },
+    {
+      "id": "T09",
+      "title": "五模型结构交付整合与替换代码收尾",
+      "blocked_by": [
+        "T05",
+        "T06",
+        "T07",
+        "T08"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/09.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 10,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/10",
+        "title": "[T09] 五模型结构交付整合与替换代码收尾"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "review_state": "accepted",
+      "dispatched_at": "2026-10-29T15:33:00+08:00",
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T09.json",
+      "all_blockers_closed": true,
+      "completed_at": "2026-10-29T17:26:48.784604+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T09-review/acceptance.md"
+    },
+    {
+      "id": "T10",
+      "title": "按用户公式计算 DeepSeek 算子成本与串行循环小计",
+      "blocked_by": [
+        "T04"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/10.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 11,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/11",
+        "title": "[T10] 按用户公式计算 DeepSeek 算子成本与串行循环小计"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "all_blockers_closed": true,
+      "phase": "cube_vec_coarse_performance",
+      "review_state": "accepted",
+      "template_authorized_at": "2026-10-29T17:26:48.784604+08:00",
+      "scope_update_comment": "https://github.com/xiechonghang/LLMarchi_excel/issues/11#issuecomment-6492940571",
+      "dispatched_at": "2026-10-29T18:10:00+08:00",
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T10-cube-vec.json",
+      "phase_status": "completed",
+      "template_completed_at": "2026-10-29T17:44:05.361959+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T10-cube-vec-review/acceptance.md",
+      "deliverable": "outputs/01a17dc8-T10-template-20261029/matmul_performance_template.xlsx",
+      "template_acceptance_comment": "https://github.com/xiechonghang/LLMarchi_excel/issues/11#issuecomment-6493302563",
+      "previous_execution": "docs/tasks/model-structure-2026-10-28/executions/T10-template.json",
+      "completed_at": "2026-10-29T18:59:35.041849+08:00",
+      "acceptance_comment": "https://github.com/xiechonghang/LLMarchi_excel/issues/11#issuecomment-6494821948"
+    },
+    {
+      "id": "T11",
+      "title": "将已确认性能公式覆盖其余模型并完成性能交付",
+      "blocked_by": [
+        "T05",
+        "T06",
+        "T07",
+        "T08",
+        "T10"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/11.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 12,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/12",
+        "title": "[T11] 将已确认性能公式覆盖其余模型并完成性能交付"
+      },
+      "status": "completed",
+      "native_dependencies_verified": true,
+      "all_blockers_closed": true,
+      "review_state": "accepted",
+      "phase": "cube_vec_four_model_performance",
+      "dispatched_at": "2026-10-29T19:00:00+08:00",
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T11-cube-vec.json",
+      "completed_at": "2026-10-29T22:24:49.706191+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T11-cube-vec-review/acceptance.md",
+      "acceptance_comment": "https://github.com/xiechonghang/LLMarchi_excel/issues/12#issuecomment-6499240454",
+      "github_state": "CLOSED"
+    },
+    {
+      "id": "T12",
+      "title": "Decoder 语义图与可追溯等价化简（DeepSeek 首批）",
+      "blocked_by": [],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/12.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 13,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/13",
+        "title": "[T12] Decoder 语义图与可追溯等价化简（DeepSeek 首批）"
+      },
+      "status": "completed",
+      "review_state": "accepted",
+      "native_dependencies_verified": true,
+      "version": "decoder-dataflow-vnext-2026-10-30",
+      "dispatched_at": "2026-10-30T18:05:55.725311+08:00",
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T12-decoder.json",
+      "review_report": "docs/tasks/model-structure-2026-10-28/T12-decoder-review/round-2-findings.md",
+      "rework_dispatched_at": "2026-10-30T20:24:08.355600+08:00",
+      "github_state": "CLOSED",
+      "completed_at": "2026-10-30T20:31:23.189997+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T12-decoder-review/acceptance.md",
+      "acceptance_comment": "https://github.com/xiechonghang/LLMarchi_excel/issues/13#issuecomment-6522900259"
+    },
+    {
+      "id": "T13",
+      "title": "Archify 接入 DeepSeek Decoder 分层阅读",
+      "blocked_by": [
+        "T12"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/13.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 14,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/14",
+        "title": "[T13] Archify 接入 DeepSeek Decoder 分层阅读"
+      },
+      "status": "completed",
+      "review_state": "accepted",
+      "native_dependencies_verified": true,
+      "version": "decoder-dataflow-vnext-2026-10-30",
+      "all_blockers_closed": true,
+      "dispatched_at": "2026-10-30T20:32:47.457640+08:00",
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T13-decoder.json",
+      "review_report": "docs/tasks/model-structure-2026-10-28/T13-decoder-review/round-2-findings.md",
+      "rework_dispatched_at": "2026-10-31T11:54:26.753706+08:00",
+      "github_state": "CLOSED",
+      "completed_at": "2026-10-31T12:03:43.306145+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T13-decoder-review/acceptance.md",
+      "acceptance_comment": "https://github.com/xiechonghang/LLMarchi_excel/issues/14#issuecomment-6538759177"
+    },
+    {
+      "id": "T14",
+      "title": "四模型语义数据流图推广与五模型交付",
+      "blocked_by": [
+        "T13"
+      ],
+      "draft_file": "docs/tasks/model-structure-2026-10-28/14.md",
+      "external_gate": null,
+      "github_issue": {
+        "number": 15,
+        "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/15",
+        "title": "[T14] 四模型语义数据流图推广与五模型交付"
+      },
+      "status": "in_progress",
+      "review_state": "changes_requested",
+      "native_dependencies_verified": true,
+      "version": "decoder-dataflow-vnext-2026-10-30",
+      "all_blockers_closed": true,
+      "dispatched_at": "2026-10-31T12:05:19.810188+08:00",
+      "execution_record": "docs/tasks/model-structure-2026-10-28/executions/T14-decoder.json",
+      "review_report": "docs/tasks/model-structure-2026-10-28/T14-decoder-review/round-3-findings.md",
+      "rework_dispatched_at": "2026-10-31T14:26:41.591222+08:00",
+      "github_state": "OPEN",
+      "completed_at": "2026-10-31T16:53:58.025046+08:00",
+      "acceptance_report": "docs/tasks/model-structure-2026-10-28/T14-decoder-review/round-2/acceptance.md",
+      "acceptance_comment": "https://github.com/xiechonghang/LLMarchi_excel/issues/15#issuecomment-6541379682",
+      "review_round": 3,
+      "reopened_at": "2026-10-31T17:32:42.217998+08:00",
+      "acceptance_withdrawn": true
+    }
+  ],
+  "all_tasks_completed": false,
+  "previous_version_completed_at": "2026-10-29T22:24:49.706191+08:00",
+  "current_version": "decoder-dataflow-vnext-2026-10-30"
+}

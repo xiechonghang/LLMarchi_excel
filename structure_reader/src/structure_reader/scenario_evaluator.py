@@ -6,7 +6,8 @@
 - 不 eval、不 exec、不访问属性、不索引、不调用白名单外函数；
   非法表达式在解析/校验期具名拒绝，不存在任何动态执行路径。
 - 深度/节点数上限按真实 AST 嵌套计（括号不构成 AST 深度，也不设
-  文本长度/括号数上限），防御超深表达式。
+  文本长度/括号数上限），防御超深表达式。节点上限 160：T11 的 Qwen QSA
+  逐 query 精确和闭式（ΣNq/ΣBq/Σtail，约 100 个节点）需要；仍是有限整数运算。
 - 环境（env）契约：值必须是整数且不得是 bool，绝对值 ≤ 2^63-1；布尔、
   字符串、浮点、任意对象一律在入口具名拒绝——任意对象运算与模型代码
   执行均不可能发生。env=None 等价空环境。
@@ -37,10 +38,12 @@ __all__ = [
     "evaluate_bool",
     "evaluate_tri",
     "check_expression",
+    "expression_names",
+    "excel_formula",
 ]
 
 _MAX_DEPTH = 24
-_MAX_NODES = 96
+_MAX_NODES = 160
 _MAX_ABS = (1 << 63) - 1  # 字面量/env 值/中间结果的量级上限（int64）
 _ALLOWED_FUNCS = ("min", "max")
 _ALLOWED_CMPS = (ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE)
@@ -259,6 +262,73 @@ def _eval(node: ast.AST, env: Mapping[str, Any]) -> Any:
 def check_expression(expr: str) -> None:
     """仅校验白名单合法性，不求值；非法抛 :class:`ExpressionError`。"""
     _parse(expr)
+
+
+def expression_names(expr: str) -> list[str]:
+    """返回白名单表达式引用的变量名（不含 min/max 函数名），按名排序。
+
+    只接受与 :func:`check_expression` 相同的白名单语法；非法表达式抛
+    :class:`ExpressionError`。用于 Excel 公式编译前的引用检查。
+    """
+    tree = _parse(expr)
+    names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    names.difference_update(_ALLOWED_FUNCS)
+    return sorted(names)
+
+
+# Excel 公式编译：与 evaluate_int/evaluate_bool 共用同一白名单 AST，只把节点
+# 换成 Excel 语义（// → INT(a/b)，% → MOD，min/max → MIN/MAX，and/or → AND/OR）。
+_EXCEL_CMP = {
+    ast.Eq: "=", ast.NotEq: "<>", ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">=",
+}
+
+
+def _to_excel(node: ast.AST, refs: Mapping[str, str]) -> str:
+    if isinstance(node, ast.Constant):
+        return str(node.value)
+    if isinstance(node, ast.Name):
+        if node.id not in refs:
+            raise ExpressionError(f"缺少变量: {node.id}")
+        return refs[node.id]
+    if isinstance(node, ast.BinOp):
+        left = _to_excel(node.left, refs)
+        right = _to_excel(node.right, refs)
+        if isinstance(node.op, ast.FloorDiv):
+            return f"INT(({left})/({right}))"
+        if isinstance(node.op, ast.Mod):
+            return f"MOD({left},{right})"
+        operator = {ast.Add: "+", ast.Sub: "-", ast.Mult: "*"}[type(node.op)]
+        return f"({left}{operator}{right})"
+    if isinstance(node, ast.UnaryOp):
+        operand = _to_excel(node.operand, refs)
+        return f"({'-' if isinstance(node.op, ast.USub) else '+'}{operand})"
+    if isinstance(node, ast.Call):
+        args = ",".join(_to_excel(arg, refs) for arg in node.args)
+        return f"{node.func.id.upper()}({args})"
+    if isinstance(node, ast.Compare):
+        left = _to_excel(node.left, refs)
+        right = _to_excel(node.comparators[0], refs)
+        return f"({left}{_EXCEL_CMP[type(node.ops[0])]}{right})"
+    if isinstance(node, ast.BoolOp):
+        joiner = "," if isinstance(node.op, ast.And) else ","
+        args = joiner.join(_to_excel(value, refs) for value in node.values)
+        function = "AND" if isinstance(node.op, ast.And) else "OR"
+        return f"{function}({args})"
+    raise ExpressionError(f"表达式包含白名单外的语法节点: {type(node).__name__}")
+
+
+def excel_formula(expr: str, refs: Mapping[str, str]) -> str:
+    """把白名单表达式编译成不带 ``=`` 的 Excel 公式（引用由 refs 给出）。
+
+    ``refs`` 是变量名 → 单元格引用（如 ``{"W": "$D$5"}``）。语义与
+    :func:`evaluate_int`/:func:`evaluate_bool` 一致：``//`` 用 ``INT(a/b)``
+    （整数且除数正数时等价 floor），``%`` 用 ``MOD``，布尔用 ``AND``/``OR``。
+    变量缺失抛 :class:`ExpressionError`；非法表达式同样具名拒绝。
+    """
+    if not isinstance(refs, Mapping):
+        raise ExpressionError(f"refs 必须是映射，得到 {type(refs).__name__}")
+    tree = _parse(expr)
+    return _to_excel(tree.body, refs)
 
 
 def _env_missing(expr: str, env: Mapping[str, Any]) -> str | None:

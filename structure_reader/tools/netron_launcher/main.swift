@@ -73,12 +73,12 @@ func resolve(_ link: String) throws -> (URL, String) {
         throw LinkError.message("不允许 path")
     }
     let items = comps.queryItems ?? []
-    guard items.count == 4 else {
-        throw LinkError.message("参数必须恰好 4 个（candidate/phase/module/variant）")
+    guard items.count == 4 || items.count == 5 else {
+        throw LinkError.message("参数必须 4 个（candidate/phase/module/variant）或 5 个（+group）")
     }
     var params: [String: String] = [:]
     for item in items {
-        guard ["candidate", "phase", "module", "variant"].contains(item.name) else {
+        guard ["candidate", "phase", "module", "variant", "group"].contains(item.name) else {
             throw LinkError.message("未知参数: \(item.name)")
         }
         guard params[item.name] == nil else {
@@ -101,6 +101,10 @@ func resolve(_ link: String) throws -> (URL, String) {
     guard let variant = params["variant"], variant == "sim" else {
         throw LinkError.message("variant 仅支持 sim")
     }
+    let groups: Set<String> = ["swa-hash", "csa-hash", "hca-topk", "csa-topk"]
+    if let group = params["group"] {
+        guard groups.contains(group) else { throw LinkError.message("group 非法") }
+    }
     let root = try projectRoot()
     let base = root.appendingPathComponent("structure_reader/outputs/deepseek_v4_flash_0731_hf/\(candidate)")
     guard FileManager.default.fileExists(atPath: base.path) else {
@@ -110,7 +114,8 @@ func resolve(_ link: String) throws -> (URL, String) {
     guard baseResolved.path == base.standardizedFileURL.path else {
         throw LinkError.message("候选目录含符号链接，拒绝")
     }
-    let file = base.appendingPathComponent("onnx/\(phase)/\(module)/model.sim.onnx")
+    let prefix = params["group"].map { "onnx/\($0)/" } ?? "onnx/"
+    let file = base.appendingPathComponent("\(prefix)\(phase)/\(module)/model.sim.onnx")
     let fileResolved = file.resolvingSymlinksInPath().standardizedFileURL
     guard fileResolved.path.hasPrefix(root.path + "/"), fileResolved.path == file.standardizedFileURL.path else {
         throw LinkError.message("路径越界或含符号链接，拒绝")
@@ -131,7 +136,7 @@ func resolve(_ link: String) throws -> (URL, String) {
           let deliverables = obj["deliverables"] as? [String: String] else {
         throw LinkError.message("run_manifest.json 不可读或缺少 deliverables")
     }
-    let key = "onnx/\(phase)/\(module)/model.sim.onnx"
+    let key = "\(prefix)\(phase)/\(module)/model.sim.onnx"
     guard let expected = deliverables[key] else {
         throw LinkError.message("run_manifest 无该交付: \(key)")
     }

@@ -1,0 +1,10 @@
+{
+  "task": "T06",
+  "baseline_dir": "/var/folders/cf/v8s2g_0n0_5c9x9brbcy1nw00000gn/T/llmarchi-T06-baseline-20261029-qq_zsdee",
+  "baseline_manifest": "/var/folders/cf/v8s2g_0n0_5c9x9brbcy1nw00000gn/T/llmarchi-T06-baseline-20261029-qq_zsdee/manifest.json",
+  "head": "947ae78f120279403ec0a4c539e99d3d8869e1d6",
+  "file_count": 450,
+  "state": "dispatch_preparation",
+  "automation_status": "ACTIVE",
+  "automation_interval_minutes": 45
+}

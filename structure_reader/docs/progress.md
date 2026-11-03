@@ -1,5 +1,133 @@
 # progress：当前HF阅读样板与旧参考实现历史
 
+## 本轮DeepSeek结构阅读正式交付完成（2026-11-03）
+
+- 用户确认整体交付完成，D01–D05全部验收，#17–#21均已按本票范围关闭。最终6ec5957a候选67图/71图位；独立构建同身份同字节，67/67原生与804/804页面证据精确复用，222源码/29425历史输出及Excel保持。
+- 正式入口、阅读指南、图库/导航、图↔旧表映射与技术证据见 [最终验收](../../docs/tasks/deepseek-structure-reading-2026-11-01/D05-acceptance.md)。
+- 无活动D系列任务；父规格#16和旧T14不自动关闭，不推广、不Git、不改自动化、不E01、不自动归档。
+
+## D05技术复核通过，待用户整体确认（2026-11-03）
+
+- 独立正式构建returncode0、同6ec5957a身份/reused、同页面09a5字节。222源码与29425历史输出未变；模型/config/工具/产品源匹配。
+- 精确复核67图candidate/HTML/view/relations来源绑定，复用D04已接受67/67原生、804/804页面、178截图，不重复浏览器整套。补齐67图/71位实际路由与图↔旧表输入算子键映射，纠正文档原生证据指针，产品/Excel不改。详 [D05复核](../../docs/tasks/deepseek-structure-reading-2026-11-01/D05-codex-review.md)。
+- D01-D04用户视觉已确认，D05整体确认仍待回复，#21与父规格/T14未关闭。不Git、不自动化、不推广、不操作E01。
+
+## D04已验收，D05最终收口已派发（2026-11-03）
+
+- 用户确认6ec5957a最终候选视觉无问题，D04/#20验收关闭；804/804页面、67/67原生、59/59阅读测试及历史/Excel保护通过。详 [D04验收](../../docs/tasks/deepseek-structure-reading-2026-11-01/D04-acceptance.md)。
+- D05/#21前置#18/#19/#20均已关闭。已核对正确Window/会话，在原“实施 D01 图形显示修复”派发并确认进行中。新快照/private/tmp/llmarchi-D05-baseline-nrp562h8/manifest.json，29425输出保护。冻结/正式构建/全图库AC证据/图表映射/最终阅读指南，完成停待技术与用户整体review。
+- 用户审视觉；未变字节/依赖的证据按指纹复用，变更重验，不逐张长图。不自动关闭父规格/T14、不推广、不Git、不自动化、不E01。
+
+## D04技术通过，待用户视觉确认（2026-11-03）
+
+- 最终6ec5957a候选71图位浏览器804/804、67张原生完整门禁67/67及重建字节一致、阅读测试59/59通过；20张MoE图真实facts与公开连接/关系独立核对通过，无剩余技术阻塞。
+- 28870历史输出与Excel保持，来源匹配；四项返修已解决。详 [D04技术复核](../../docs/tasks/deepseek-structure-reading-2026-11-01/D04-rework-codex-review.md)。
+- 用户视觉尚待确认，D04/#20保留开放，D05未启动；不Git、不改自动化、不操作E01/旧T14。
+
+## D04复核退回，纠正派单后返修中（2026-11-03）
+
+- f5b8候选页面804/804、阅读测试57/57及历史/Excel保护通过；IndexAdd/关系边界、路由计权可见性、张量身份、shared Clamp/参数及mHC来源需返修。详 [D04复核](../../docs/tasks/deepseek-structure-reading-2026-11-01/D04-codex-review.md)。
+- 首次返修误投E01，用户选择手动停止；两文件部分修改/构建已保存，不回滚。已重新核验Window/会话层级，在正确“实施 D01 图形显示修复”会话发出纠正派单并确认进行中。新快照/private/tmp/llmarchi-D04-corrected-baseline-4spkipj8/manifest.json，28870现有输出保护。
+- 只D04，完成停待复核；不D05，不Git、不改自动化，不操作E01/旧T14。
+
+## D03已验收，D04已派发（2026-11-03）
+
+- 用户确认73034fda最终D03候选视觉无问题，D03/#19验收关闭；此前644/644页面、51/51原生、53/53阅读测试及历史保护通过。详 [D03验收](../../docs/tasks/deepseek-structure-reading-2026-11-01/D03-acceptance.md)。
+- D04/#20已在原dsh会话“实施 D01 图形显示修复”派发，GUI确认进行中。范围MoE模块关系、Hash/TopK、激活与共享专家内部；基线/private/tmp/llmarchi-D04-baseline-_y3z11q3/manifest.json，27208旧输出保护。完成停待复核，不D05。
+- 用户审视觉，Codex核技术与必要机器门禁；保Excel/历史/E01隔离，不Git、不改自动化、不旧T14。
+
+## D03技术通过，待用户视觉确认（2026-11-03）
+
+- 最终73034候选：55图位浏览器644/644、51张原生全门禁51/51与重建字节一致、阅读测试53/53通过。13张阶段图实际输入和图外出口独立核对一致，已无技术阻塞。
+- 23225旧输出文件及Excel逐字节保护通过，源码与候选来源匹配。详 [D03最终技术复核](../../docs/tasks/deepseek-structure-reading-2026-11-01/D03-rework03-codex-review.md)。
+- 用户视觉待确认，不代签逐张目检；D03/#19保留开放，D04/D05未派。未Git、未改自动化/E01/旧T14。
+
+## D03 rework02复核：输入/缓存已过，仅输出扇出待修（2026-11-03）
+
+- 8136新候选55图位644/644浏览器通过，52/52阅读测试通过，23013历史输出与Excel保持。输入推导、未知id拒绝及缓存累计投影/全称来源已通过。
+- 唯一剩余P1：阶段tensor同时被图内外消费时，外部出口被consumed过滤。两CSA Q图q_residual出口及三压缩器compressed KV出口丢失，已原dsh会话派D03-rework03限定修复。详 [复核](../../docs/tasks/deepseek-structure-reading-2026-11-01/D03-rework02-codex-review.md)。
+- GUI确认进行中；保所有正确部分，不D04/D05，不Git、不改自动化。用户视觉待最终语义正确候选。
+
+## D03 返修显示通过，剩余技术修复已续派（2026-11-03）
+
+- 8cfa候选55图位真实浏览器644/644通过，HCA压缩器原生门禁通过，48项阅读测试通过；用户视觉仍待审，不逐张读取长截图。
+- 技术未验收：阶段图手工边界丢真实输入且引用不存在op/tensor；缓存调用后累计状态与可见全称/来源未补齐。详 [返修复核](../../docs/tasks/deepseek-structure-reading-2026-11-01/D03-rework-codex-review.md)。
+- 已原会话派发D03-rework02-handoff.md，GUI确认进行中；保已过布局/Attention/HCA/QO，不启动D04/D05。22641+160历史输出与Excel保持；未Git、未改自动化。
+
+## D03 复核退回、五项返修已派发（2026-11-03）
+
+- 7c724候选未验收：Attention block_bias实际输入丢边；HCA偏置误套CSA且细图漏算子；缓存主图状态/参数不足；8张图双视口16项字号失败；Q/O独立入口缺失。详 [D03复核](../../docs/tasks/deepseek-structure-reading-2026-11-01/D03-codex-review.md)。
+- 实际页面探针496通过/18失败，其中2项旧33图位假设不计产品缺陷，16项为字号失败；45项阅读测试通过。原生HCA门禁确认Chrome可用、字号约2.333px不达6px。22641旧输出与Excel保护通过。
+- 原dsh会话已收到D03-rework-handoff.md并进行中，D03-execution.json记录返修身份/基线；D04/D05未派。用户负责人眼视觉，Codex仅技术/必要机器验证。本轮未Git、未改自动化。
+
+## DeepSeek 正式阅读：D02 已验收，D03 已派发（2026-11-03）
+
+- D02/#18 最新 c47633db 已通过技术复核；用户确认视觉无问题。复用最终候选424/424页面、29/29原生与41项阅读测试证据，来源/历史/Excel保护另核。详 [D02返修验收](../../docs/tasks/deepseek-structure-reading-2026-11-01/D02-rework-codex-review.md)。
+- D03/#19 已在原 dsh 会话“实施 D01 图形显示修复”派发并由GUI确认进行中。当前只做Attention、Q/KV/O、三类缓存及Indexer，完成停待验收；D04/D05未派。记录见 docs/tasks/deepseek-structure-reading-2026-11-01/D03-execution.json。
+- 用户负责人眼视觉审查，Codex负责技术与必要机器验证，不逐张读取长截图。E01 Excel任务在隔离快照并行，禁止互相覆盖。自动化保持现状，未新建/恢复；不Git、不接旧T14。
+
+## 当前M2阅读反馈：长HTML分层跳转目录（2026-10-27）
+
+- **最新完成，覆盖下方处理中记录**：原Harness App1017 High第44/45轮正常完成，新cfa518d528fdc7709be0643d56274f31536819de1e8e837e2e044182e6dda962。宽屏固定分层目录/窄屏持续目录按钮，205目录目标/138模块含4嵌套Indexer按阶段组定位；Codex3有限检查、3922唯一id/3862旧锚点保留、142SVG/24表/626源码pre与8组正文保持、JSON/Excel及556ONNX目录文件同9a3f、28源7输入/两真实build同ID二次reused、138Netron resolve-only/13661保护均通过。[正式复核与入口](acceptance/hf_m2_toc_review01.md)。仅导航静态工程passed，真实浏览器点击/布局/用户阅读未代签，M2阅读pending/M3未启/自动PAUSED，不Git；原App空闲，不重复旧任务。
+
+- 用户要求长页增加跳转目录。基线9a3f，原Harness App1017 High同会话已完整收到hf_m2_toc01/task.md（SHA870bbc16b7f8704ee7590ab2e81879275ab82d27ef923a601f679c79ce4df080）并processing。仅阶段→四真实组合→章节/具体模块导航与必要锚点/局部样式，保142SVG/讲解/表格/JSON/Excel/276ONNX。13099历史文件只读保护；Codex仅派单验收。M2阅读pending/M3未启/自动PAUSED，不Git/不重复旧任务，不代签浏览器。详[目录反馈](acceptance/hf_m2_reading_toc_feedback01.md)。
+
+## 当前M2继续：ONNX维度与数值实核（2026-10-26）
+
+- **最新完成，覆盖下方第42轮处理中记录**：原Harness App1017 High第42/43轮正常完成空闲，新9a3f171878fd10983dea558f07cde0571a85a4e63f373e928885fbcd3d31be05。根配置已知轴具体数值、动态完整名/未知诚实保留；oneof整数实错已修。Codex276原简/464权重buffer实例及根RoPE常数/7有限Prefill与非零位置Decode数值检查、138新链接resolve-only、28源7输入/两真实子进程同ID二次reused、三数据/142SVG同612、12537保护均通过；[正式尺寸与数值复核及入口](acceptance/hf_m2_onnx_shapes_review01.md)。仅静态尺寸/有限合成数值认可，不主张HF整模型等价/真实GUI或用户阅读。M2用户阅读pending/M3未启/自动PAUSED，不Git推送。原报告CSA/HCA及Decode fixture笔误在正式复核校正，旧报告保留。
+
+- 用户明确回复“缩写和维度数值都需要检查”，覆盖下方仅名称完成/数值待指出状态。Codex已核612的已知配置KV weight仍符号、o_b符号与o_a数字混排、固定轴1/3被存dim_param；尚不称发现512/64/32局部数学错误。按根config/HF查四组关键参数shape、KV/RoPE/GroupedLinear轴/广播及有限独立数值；静态写真实整数、动态不猜。详[本轮范围](acceptance/hf_m2_onnx_shape_feedback02.md)。
+- 原Harness App1017 High第42轮已完整收到`.work/coordination/hf_m2_onnx_shapes01/task.md`（SHA487c34d45fc14e5db6d6d1f69aa5a50ecd24f474f98c6651063937d0e4dd0ad4）并processing，before/findings与11975历史文件保护同目录。Codex仅派单验收，普通限定实现继续；不重复41轮名称单/旧门禁，不跑旧数值全套或全仓；旧冻结属旧身份，计划/需求/progress授权更新另记。M2用户阅读pending/M3未启，自动仍PAUSED、不Git/不HF执行/不绕过浏览器协议限制。
+
+## M2新阅读反馈：实际ONNX完整维度名（2026-10-25）
+
+- **最新完成覆盖本段处理中记录**：原Harness App1017 High第41轮正常完成空闲，新6126726e5bc849e939bfa00e56d7c398719568850f3110328e3f59b4ad001f43。实际276原简ModelProto符号维度全名、未知诚实unresolved；Codex15126轴名变化/节点属性连线与initializer、输入输出名/dtype/静态尺寸逐模型保持，JSON/Excel字节同、142SVG/源码pre同、138链接resolve-only、28源7输入/10851保护/两真实子进程build同ID二次reused已核，2有限字段检查复跑通过。正式[命名反馈复核与入口](acceptance/hf_m2_onnx_names_review01.md)，本轮静态工程passed。Mul标准B端口保留；截图512/64/32与配置一致，本次不代签未具体指出的其它数值问题。用户M2阅读pending，browser/Netron GUI未代签；自动PAUSED/M3未启，不Git推送，无新反馈不重复派单。
+
+- 用户截图指出ONNX参数仍不合预期，Codex确认570b实际protobuf仍B/T/H/Dh等，先前完整名仅HTML/Excel。512/64/32当前值符合配置；Mul端口B为标准第二输入，非batch维。仅修原简ONNX维度名称/中间value_info与state，数学/已知数值/JSON/Excel/原图保持，未知维不猜填；用户如另指具体数值仍待补充。详[反馈与范围](acceptance/hf_m2_onnx_parameter_feedback01.md)。
+- 原Harness App1017 High第41轮已收到`.work/coordination/hf_m2_onnx_names01/task.md`（SHA8b1947d0b91ac59f6b50a58ebc853f875b2482d33d8ba5f0966d716318c456df）并processing。修前/具名证据和10851历史候选保护在本目录；原607冻结属旧570b身份，反馈/需求/计划/progress的本次授权变更另记，不改旧freeze。新候选/两真实CLI构建/实际原简与有限核查后再交阅读；M2用户阅读pending/M3未启，自动仍PAUSED，不Git、不重复旧任务，不绕过浏览器/协议GUI限制。
+
+## M1用户阅读已确认，启动M2实际配置变体（2026-10-24）
+
+- **最新最终交付，覆盖下方全部处理中记录**：原Harness App1017 High第40轮正常完成空闲，最终570b4a27e3f6de0bfb255a33a9cf1899257b72d63b153d7d3bf0af8ef763f551。四实际组合覆盖43层，完整Prefill四组→Decode四组；纵向图/完整名/讲解/缓存/联查、Excel仅两表、各模块原简ONNX与本地Netron延续。Codex142SVG/554完整计算框/1822可见标签/1538详情真实端点→JSON、字段0溢出、Excel554行266参数与本组公式、276模型/138新链接+旧7b resolve-only、28源7输入/真实两子进程build同ID二次reused及10289历史保护已核。首组失败2有限例复跑通过，默认层4数据同7b、冻结v1契约不变。正式[M2静态工程通过及入口](acceptance/hf_m2_final_review01.md)。browser_visual/原生Excel/协议GUI未代签，用户M2阅读pending；自动仍PAUSED/M3未启/不Git推送。全部原角色已完成等待，除新反馈/实际新错误不再派继续或重复门禁。
+
+- 最新有限收口：第39轮a2ec8c75…已由Codex核142SVG/554完整框/1822边全文/1538详情实际端点→JSON、字段0溢出、Excel554行266参数、本组公式/shape、28源7输入、276原简与138新链接+旧7b resolve-only；正确成果保留。仍_build_variants成功checks在四组for之外只查最后组，原App1017 High第40轮已收到dpsk_harness_m2_guard_close01.md（SHA6ffd4a0988d83f32da0ab395573c3d0dd6870ac57c07f552c10ab2508066852d）processing，仅移入逐组循环/首组失败mock与真正子进程argv两实际build。10289旧候选保护protected_after_assets_fix01.json，自动PAUSED/M3未启/不Git；用户M2阅读待新最终入口，不代签浏览器。
+
+- 最新整合复核：原Harness第38轮73ac048b…已有276真实原简ONNX/138新Netron链接与旧7b resolve-only通过；Codex核Excel554行维度/本组公式、源码/类型/可见边/详情端点正确部分保留。仍ONNX源未入19源身份、manifest.onnx误false、SWA详情旧别名/16字段主行高度及cache metadata收尾，正式[资产复核01](acceptance/hf_m2_assets_review01.md)。当前原App1017 High第39轮已收到dpsk_harness_m2_assets_fix01.md（SHA6a1b5e8ce2212c252e059b87ce1e9c0e93077148e720f85bdb2babcd7ee0cf55）并processing，9165旧候选保护codex_harness_m2_final_review01/protected_after_assets01.json。M2尚未最终交付，自动PAUSED/M3未启、不Git；不重复旧任务。
+
+- 最新生产断点：原Harness第34轮HCA生产3项独立原简小例通过，Codex已复跑；第36轮SWA/Hash完整路由与独立缓存/AV转置修正、四组138模块构建无failed，但SWA mask空图/HCA遗漏主mask与Q主RoPE误标仍待收口。当前原App1017 High第37轮dpsk_harness_m2_mask_onnx01.md（SHA02b78a6ecff99e91ff80eccfc112b85c4405da6cc9c737893ecc0c5d9d6f4338）仅真实mask生成与Q来源组。最终assets_close01尚未派，包含Excel shape字符串/类型截断/SWA内部载体旧CSA说明修正与真实新资产。7467旧候选只读，自动PAUSED/M3未启，不Git。
+
+- 最新ONNX断点：原Harness第32轮仅定形小样，Codex发现HCA多窗口位置漏乘compress_rate、mask非-inf及SWA漏sink/缓存tail与AV来源错误，尚非生产接入。当前原App1017 High第33轮已收到dpsk_harness_m2_hca_onnx01.md（SHAf52f81e087d46da369f0caec764a2ba5a2f66fd5b0970a94b066f3f729b10e24）并processing，仅HCA真实Ctx/window/RoPE与两窗口独立期望，之后生产SWA/Hash、最终资产/两具名展示收尾。7467历史候选只读，自动PAUSED/M3未启，不Git推送。
+
+- 最新视图断点：原第31轮完成41b167c5…（不含ONNX），修f6c缺图CSS/CLI身份与真实argv等。Codex真实xlsx I/O回读仍发现shape数组被投影成字符串后逐字符join，且554框类型中HCA c_rope_gen两阶段副行截掉RoPE；[视图复核](acceptance/hf_m2_view_review01.md)，留最终资产收口一起修。当前M2没有最终通过，下一已授权小段为真实HCA/SWA/Hash ONNX builder+有限小例，然后all-variants资产/Netron与两实际构建。自动PAUSED/M3未启，不重复旧单/不Git推送。
+
+- 当前唯一处理中：原Harness App1017 High第30轮dpsk_harness_m2_view_close01.md（SHAa057c0fa776734d3176625f64ac0cb5d489b1dbed10727163220ca78d9b75053）收口wrapper命名空间/源码回图脚本、复用完整两表导出与真实工具身份、两次不带ONNX的真实构建。此前第25轮view首次构建KeyError与第26轮未实施报告保留；第27轮已实改分组/变体frames并生成8phase图，第28/29轮新增显示名/讲解与具名语义修正。当前尚无可交付M2完整候选，ONNX/Netron资产段仍需继续同一任务，禁止把数据/图数量当完成。7455旧候选只读，自动PAUSED/M3未启，不Git推送。
+
+- 最新数据推进：原Harness第22-24轮已实际实现HCA/SWA/Hash，Codex复核0/2/3/4两阶段关键真实依赖与shape，默认层4 JSON同7b、7455旧保护不变；[数据阶段复核](acceptance/hf_m2_data_review01.md)。当前原App1017 High第25轮processing：dpsk_harness_m2_view01.md（SHA0a07556e1c970b4320c857ab8cb9ea88d96fe3afa459ba4a4b0826d979e3fe3b），四组容器/完整双阶段HTML/两表Excel/CLI先接入，ONNX资产随后同一M2继续。尚无完整M2交付，不重复旧单，自动PAUSED/M3未启。
+
+- 当前实施断点：原Harness第20/21轮仅完成source_map/公开未完成报告，无产品改动；旧仅CSA guard和实现规模不是外部阻断，不作为M2交付。继续同一已授权任务分小段，先仅HCA层3两阶段真实数据/少量分支检查，随后SWA/Hash与整合；不移植旧参考V2。任务dpsk_harness_m2_hca_data01.md，输入/7455旧候选保护保持。M2尚未完成，自动PAUSED/M3未启。
+
+- 用户明确当前可以进入下一阶段，要求补齐除CSA以外DeepSeek V4结构，覆盖下方旧“M1待确认/M2未启”状态；当前7b8711f2阅读认可，浏览器/原生Excel代测未核不改写。M2按v5四组合：SWA+Hash层0/1、CSA+Hash层2、HCA+TopK层3/5至41、CSA+TopK层4/6至42。继续原Harness App1017 High，Codex派单验收；新增小变体容器保持冻结单层v1，HTML完整Prefill各组后完整Decode各组，Excel两表及ONNX/Netron延续。详[启动记录](acceptance/hf_m2_start_2026_10_24.md)。自动仍PAUSED，本轮不Git推送，M3未启。
+
+## 当前新增反馈12：参数与维度完整名称（2026-10-24）
+
+- 最新完成，覆盖下方本轮处理中记录：原Harness App1017 High第19轮正常完成并空闲，当前7b8711f2…的讲解/图shape/参数区/算子流/张量索引用完整名称；派生缓存前后与CSA/Indexer区分，源码转置/键语义保持。Codex13项通过、512可见标签全文、528实际SVG端点配对同14de且0悬空、38段讲解/内链保持；三数据/144ONNX/源码pre/启动器同，151交付/23源/7输入/两真实build同ID第二次reused与6087旧保护已核。本轮静态工程passed，真实浏览器与用户阅读未代签。详[最终复核与入口](acceptance/hf_m1_harness_names12_review03.md)。自动PAUSED/M1待整体确认/M2M3未启，未提交推送，用户删除保持；无新反馈不重复派单。
+
+- 当前同一反馈有限收尾02：5c846590已补全512可见标签与派生参数/条件；Codex核528实际边端点与14de几何配对一致、无悬空，三数据/144ONNX/5935旧保护和身份保持。尚有说明替换把转置.T/^T及键K误作维度，正式[复核02](acceptance/hf_m1_harness_names12_review02.md)。已原Harness App1017 High第19轮收到dpsk_harness_names12_fix02.md并processing，任务SHA8b81b212810e145fcfc526127feadcf95afb429b34d05a5ce493c0fe3d89e356，6087旧保护codex_harness_names12_review02/。只修本轮名称语义，不改布局/模型/数据；自动PAUSED/M2M3未启，不重复派旧单。
+
+- 用户不希望参数/shape使用B/H/Rq等缩写，HTML改为batch_size/hidden_size/q_lora_rank等完整名；真实源码原文、内部id/联查及模型/Excel/ONNX数据保持。继续原Harness App1017 High，任务dpsk_harness_names12_01.md；修前与5783旧候选保护codex_harness_names12_dispatch01/。自动PAUSED，M1待整体确认/M2M3未启，本轮不自动提交推送。详[反馈12](acceptance/hf_m1_reading_feedback12.md)。
+
+## 当前新增反馈11：结构输入至输出的数据流讲解（2026-10-24）
+
+- 最新完成，覆盖下方本轮处理中记录：原Harness App1017 High完成14de8a08…，两阶段总览及36模块共38段可见讲解，贯通输入/shape、共同计算、中间变化和输出去向。mHC三分支与后续残差闭环、Indexer三路来源、MoE选择/权重语义已核。Codex复跑9项通过；36SVG、6表、144个ONNX目录文件与三数据/启动器不变，151交付/22工具源/7输入、两真实build同ID第二次reused、2787旧保护已核。本轮静态工程passed；真实浏览器/原生Excel未核，用户阅读pending。详[最终复核与入口](acceptance/hf_m1_harness_narrative11_review03.md)。当前任务已完成等待阅读，无需重复派单；自动PAUSED，M1待整体确认/M2M3未启。本轮未提交或推送，用户删除保持。
+
+- 最新有限收尾02：原Harness收尾01交付f451b7a1并正常空闲，源码别名/三无效缓存引用/参数派生与转义/mHC来源及三返回/MoE截断与bias语义/关键shape已修，保留。仅剩总览误称第三次残差、Indexer主句压缩键/查询角色混叙、专家双括号与clamp参数格式；[复核02](acceptance/hf_m1_harness_narrative11_review02.md)。已原同App1017 High第16轮完整收到dpsk_harness_narrative11_fix02.md并processing（SHAdcf3cfe1956ea2c277f0cf70ff931c87b05d38096f9cf4c5c5b206836b71f83f），修前与2787旧保护codex_harness_narrative11_review02/。仅同一说明收尾，不重做模型/图；预期fix_result02/新candidate与原始logs，自动PAUSED/M2M3未启。
+
+
+- 反馈11初版094e2f39已完成空闲，Codex读实际helper/接入/样板与日志，保留模块说明和mHC闭环；发现内部id直显/三无效缓存引用、写死数字与shape未转义、ffn_hc来源、MoE gate/up截断和bias权重语义、关键中间shape及总览讲解遗漏。均仅新增说明层，非模型缺陷。[初版复核](acceptance/hf_m1_harness_narrative11_review01.md)，证据codex_harness_narrative11_review01/。已原App1017 High第15轮完整收到有限收尾dpsk_harness_narrative11_fix01.md并观察processing（SHA3487d16d82f6b5b08716fb7bb341b2a058912c2890d9b1e5987e399b1ab0ebdd），2635旧保护；禁止重复旧单或接手产品。预期fix_result01/新candidate与原始logs，自动PAUSED/M1待确认/M2M3未启。
+
+
+- 用户反馈mHC等复杂结构只看图仍难建立概念，要求新增从输入/shape、多输入共同计算、关键中间变化直到输出去向的连贯中文说明。基线b81c1e8a…，源码已于Git947ae78正常推送公开仓库（旧“未Git提交”仅历史）。当前继续原Harness App1017 High，仅说明层/必要工具身份及受影响检查，原36图/72ONNX/三数据/启动器保持。任务dpsk_harness_narrative11_01.md已原App1017 High会话完整派发并观察进行中（SHA1f9bbc67ea79aa5e1cd7fde10f3149943ca3cc1e83203800c38d9e6e0fa5f9a8），193修前/2483旧候选保护codex_harness_narrative11_dispatch01/；Codex仅派单验收。自动PAUSED、M1待整体阅读/M2M3未启，不自动推送本轮产品，不重复旧单。详[反馈11](acceptance/hf_m1_reading_feedback11.md)。
+
 ## 当前新增反馈10：表格约束在卡片背景内（2026-10-21）
 
 - 最新完成覆盖本轮处理中：原Harness App1017完成b81c1e8a…，两阶段参数/配置/张量共6表加card内独立滚动容器与长路径/公式换行，不裁剪/隐藏列/缩字。Codex核6完整table markup逐字节同2877、祖先card/phase正确、id/内链保持，5受影响检查rc0；36SVG/72ONNX/144目录文件/三数据/启动器保持，151交付/21源/7输入/两真实build同ID第二次reused与2331旧保护核实。本轮表格静态工程passed，真实浏览器CSS/窄屏/缩放与用户阅读未代签。自动PAUSED、M1待整体确认/M2M3未启。当前入口b81c1e8a7ac0dc931a9f1bed804d0b014e6ec9eb0c88c5f246b6ceec757b6a6c/viewer/decoder.html，[正式复核](acceptance/hf_m1_harness_table10_review01.md)，证据codex_harness_table10_review01/。Harness已空闲，未Git提交/恢复用户删除；不重发旧任务/本地协议不绕过，等新用户阅读反馈。

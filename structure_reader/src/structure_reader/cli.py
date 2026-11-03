@@ -1152,23 +1152,37 @@ def _build_parser() -> argparse.ArgumentParser:
     hf_parser = commands.add_parser(
         "build-hf",
         help="HF decoder 阅读样板构建（transformers/eager）：reading_document + 单文件离线 HTML"
-             " + 两表 xlsx（outputs/<model_key>/<analysis_id>/）",
+             " + 两页可填写配置 xlsx（outputs/<model_key>/<analysis_id>/）",
     )
     hf_parser.add_argument(
         "--model", required=True,
-        help="模型键（当前仅 deepseek_v4_flash_0731_hf）",
+        help="模型键（deepseek_v4_flash_0731_hf / glm_5_3_hf / glm_5_3_flash_hf / "
+             "qwen_3_8_flash_next_hf / hidream_o1_image_hf；各自只用自己的模型事实）",
     )
     hf_parser.add_argument(
-        "--layer-index", type=int, default=4,
-        help="样板层索引（默认 4：CSA + TopK MoE；其余变体属里程碑二）",
+        "--layer-index", type=int, default=None,
+        help="单层样板索引（缺省用模型适配的样板层；GLM-5.3 / GLM-5.3-Flash 只提供 "
+             "--all-variants 分层入口）",
     )
     hf_parser.add_argument(
         "--workspace-root", default=None,
         help="工作区根目录；缺省从包位置向上定位，不依赖 cwd",
     )
     hf_parser.add_argument(
+        "--all-variants", action="store_true",
+        help="分层浏览入口：viewer/structure.html（整网→层组→Block→算子，"
+             "默认只显示当前层级）+ 两页真实层组可填写配置 xlsx（派生公式、循环归属、"
+             "CUBE/VEC 粗估与串行汇总；DeepSeek 已接入）+ 可选 ONNX（仅 DeepSeek）")
+    hf_parser.add_argument(
         "--onnx", action="store_true",
         help="额外生成模块级真实 ONNX/onnxsim 简化图（需项目内隔离安装 onnx/onnxsim/onnxruntime）"
+    )
+    hf_parser.add_argument(
+        "--archify-layers", action="store_true",
+        help="额外生成整网→层组→Block→Attention/KV、Indexer、FFN/MoE、"
+             "mHC/门控残差、PLE、DeepStack 的 Archify 底层分层图（五模型；"
+             "需可用的 Archify CLI 与 node）。图入口并入 viewer/archify/，"
+             "图数据/完整关系在 data/archify/，并进入候选身份"
     )
     hf_parser.add_argument(
         "--json", action="store_true", help="以 JSON 摘要输出"
@@ -1193,6 +1207,13 @@ def main(argv: list[str] | None = None) -> int:
 def _cmd_build_hf(args: argparse.Namespace) -> int:
     """HF 阅读样板构建命令：提取→检查→HTML/xlsx→原子落盘→失败隔离。"""
     model_key = args.model
+    if getattr(args, "archify_layers", False) and not getattr(args, "all_variants", False):
+        # 显式请求不能静默无效：单层样板没有分层结构可挂 Archify 图。
+        sys.stderr.write(
+            "usage error: --archify-layers 只随 --all-variants 分层入口生成；"
+            "单层样板（--layer-index）不支持，请改用 --all-variants。\n"
+        )
+        return 2
     try:
         workspace_root = (
             Path(args.workspace_root).resolve() if args.workspace_root else find_workspace_root()
@@ -1207,6 +1228,8 @@ def _cmd_build_hf(args: argparse.Namespace) -> int:
         result, documents = run_hf_build(
             workspace_root, _project_root(), layer_index=args.layer_index, model_key=model_key,
             onnx_modules=bool(getattr(args, "onnx", False)),
+            all_variants=bool(getattr(args, "all_variants", False)),
+            archify_layers=bool(getattr(args, "archify_layers", False)),
         )
         target = result.output_dir
         outcome = _materialize(target, documents)
@@ -1232,12 +1255,29 @@ def _cmd_build_hf(args: argparse.Namespace) -> int:
         )
 
     deliverables = documents["run_manifest.json"]
+    # 表路径显式列出：分层候选可能同时含新版性能表与旧兼容表，阅读者不用猜。
+    table_paths = {name: target / name for name in sorted(documents)
+                   if name.startswith("tables/")}
     _emit(
         args,
         [
             "status: success",
-            f"阶段: HF decoder 阅读样板（transformers/eager；里程碑一）",
-            f"model: {model_key}（layer_idx={args.layer_index}）",
+            (
+                "阶段: 分层结构浏览（整网→层组→Block→算子；" + " / ".join(
+                    str(v["id"]) for v in result.variants) + "；"
+                + ("ONNX/onnxsim 已接入）" if getattr(args, "onnx", False)
+                   else "视图阶段，ONNX 未启用）")
+                if getattr(args, "all_variants", False)
+                else "阶段: HF decoder 阅读样板（transformers/eager；里程碑一）"
+            ),
+            (f"model: {model_key}（{len(result.variants)} 组层归属：" + "；".join(
+                f"{v['label']} layers={list(v['layers'])} rep={v['representative']}"
+                for v in result.variants) + "）"
+             if getattr(args, "all_variants", False) else
+             f"model: {model_key}（layer_idx={result.layer_index}）"),
+            ("分层浏览入口: " + str(target / "viewer" / "structure.html")
+             if getattr(args, "all_variants", False) else "入口: " + str(target / "viewer" / "decoder.html")),
+            *(f"表: {name} -> {path}" for name, path in table_paths.items()),
             f"workspace_root: {workspace_root}",
             f"analysis_id: {result.analysis_id}",
             f"output_dir: {target}",
@@ -1248,13 +1288,22 @@ def _cmd_build_hf(args: argparse.Namespace) -> int:
         ],
         {
             "status": "success",
-            "stage": "HF decoder 阅读样板（里程碑一）",
+            "stage": ("分层结构浏览（整网→层组→Block→算子）"
+                      + ("，ONNX/onnxsim 已接入" if getattr(args, "onnx", False) else "，视图阶段，ONNX 未启用")
+                      if getattr(args, "all_variants", False)
+                      else "HF decoder 阅读样板（里程碑一）"),
             "model_key": model_key,
-            "layer_index": args.layer_index,
+            "layer_index": (None if getattr(args, "all_variants", False)
+                            else result.layer_index),
+            "all_variants": bool(getattr(args, "all_variants", False)),
+            "variants": ([{"id": v["id"], "label": v["label"], "layers": list(v["layers"]),
+                           "representative": v["representative"]} for v in result.variants]
+                         if getattr(args, "all_variants", False) else []),
             "analysis_id": result.analysis_id,
             "output_dir": str(target),
             "reused": outcome == "reused",
             "files": sorted(documents),
+            "tables": {name: str(path) for name, path in table_paths.items()},
         },
     )
     return 0

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek-V4-Flash-0731 审核入口</title>
+<style>
+ :root { color-scheme: light dark; --fg:#111;--muted:#666;--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--accent:#0a6cff; }
+ @media (prefers-color-scheme: dark) { :root { --fg:#e8eaed;--muted:#9aa0a6;--bg:#111418;--card:#1a1e24;--line:#2a3038;--accent:#6ea8ff; } }
+ *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+ .wrap{max-width:1100px;margin:0 auto;padding:40px 24px 80px} h1{font-size:28px;margin:0 0 6px}
+ .lead{color:var(--muted);margin:0 0 8px} code{font:12px ui-monospace,Menlo,monospace}
+ .facts{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 26px}
+ .fact{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+ .fact b{display:block;font-size:18px} .fact span{color:var(--muted);font-size:12px}
+ h2{font-size:18px;margin:34px 0 12px} .big{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+ .big a{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;text-decoration:none;color:inherit}
+ .big a:hover{border-color:var(--accent)} .big b{font-size:16px} .big p{margin:6px 0 0;color:var(--muted);font-size:13px}
+ table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+ th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);font-size:13.5px;vertical-align:top}
+ th{color:var(--muted);font-weight:600;background:rgba(127,127,127,.06)} tr:last-child td{border-bottom:0}
+ td a{color:var(--accent);text-decoration:none;white-space:nowrap}
+ .tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;background:rgba(127,127,127,.14)}
+ .tag.attention{background:rgba(10,108,255,.16)} .tag.kv{background:rgba(0,160,120,.16)} .tag.group{background:rgba(160,110,0,.16)}
+ .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+ .shot{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;text-decoration:none;color:inherit}
+ .shot img{width:100%;display:block;aspect-ratio:16/10;object-fit:cover;object-position:top;background:#000}
+ .shot span{display:block;padding:7px 10px;font-size:12px;color:var(--muted)}
+ .hint{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:12px 16px;color:var(--muted);font-size:13.5px}
+ ol.check li{margin:6px 0}
+</style></head><body><div class="wrap">
+<h1>DeepSeek-V4-Flash-0731 · 最终产物审核入口</h1>
+<p class="lead">T13 已验收候选 · <code>19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393</code> · 27 张图 / 43 层 / 4 个层组。本页只做索引，不复制、不改写候选。</p>
+
+<div class="facts">
+ <div class="fact"><b>43</b><span>Decoder 层（2+1+20+20）</span></div>
+ <div class="fact"><b>4</b><span>层组：SWA+Hash / CSA+Hash / HCA+TopK / CSA+TopK</span></div>
+ <div class="fact"><b>27</b><span>Archify 图（含 2 张 raw 对照）</span></div>
+ <div class="fact"><b>2</b><span>Excel 工作表：Prefill / Decode</span></div>
+</div>
+
+<h2>先看这三样</h2>
+<div class="big">
+ <a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/structure.html" target="_blank" rel="noopener"><b>① 产品分层入口</b><p>整网 → 4 层组 → Block/Decoder → Attention/KV、FFN/MoE、mHC；面包屑可返回。看层级切换、维度全称、Linear 实例名。</p></a>
+ <a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/tables/decoder_variants.xlsx" target="_blank" rel="noopener"><b>② Excel 性能表</b><p>Prefill / Decode 两页；可填 seqlen/kvcachelen/B/精度/位宽；CUBE/VEC 公式重算。看公式、未知量、层组小计。</p></a>
+ <a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/network.html" target="_blank" rel="noopener"><b>③ 整网数据流图</b><p>token → logits；4 个层组串行；缓存前态/后态。看主链是否单向、维度是否全称。</p></a>
+</div>
+
+<h2>27 张图清单</h2>
+<table><thead><tr><th>层级</th><th>形态</th><th>标题</th><th>打开</th></tr></thead><tbody>
+<tr><td><span class="tag network">network</span></td><td>normalized</td><td>整网主路径（token → logits）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/network.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag group">group</span></td><td>normalized</td><td>层组 SWA + Hash MoE（2 层）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/group-swa-hash.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag decoder">decoder</span></td><td>normalized</td><td>SWA + Hash MoE Block 数据流（模块阶段级）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/decoder-swa-hash.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag kv">kv</span></td><td>normalized</td><td>KV 新投影路径（Attention 接收的 hidden_states → 新 KV）（化简后）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/kv-swa-hash-normalized.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag attention">attention</span></td><td>normalized</td><td>DeepSeek Attention（Q 低秩路径 + 共享 KV + 压缩/索引 + QKᵀ/AV + 输出投影）（化简后）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/attention-swa-hash-normalized.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag moe">moe</span></td><td>normalized</td><td>SWA + Hash MoE FFN/MoE 内部计算</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/moe-swa-hash.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag mhc">mhc</span></td><td>normalized</td><td>SWA + Hash MoE mHC 多流混合与残差</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/mhc-swa-hash.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag group">group</span></td><td>normalized</td><td>层组 CSA + Hash MoE（1 层）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/group-csa-hash.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag decoder">decoder</span></td><td>normalized</td><td>CSA + Hash MoE Block 数据流（模块阶段级）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/decoder-csa-hash.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag kv">kv</span></td><td>normalized</td><td>KV 新投影路径（Attention 接收的 hidden_states → 新 KV）（化简后）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/kv-csa-hash-normalized.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag attention">attention</span></td><td>normalized</td><td>DeepSeek Attention（Q 低秩路径 + 共享 KV + 压缩/索引 + QKᵀ/AV + 输出投影）（化简后）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/attention-csa-hash-normalized.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag moe">moe</span></td><td>normalized</td><td>CSA + Hash MoE FFN/MoE 内部计算</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/moe-csa-hash.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag mhc">mhc</span></td><td>normalized</td><td>CSA + Hash MoE mHC 多流混合与残差</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/mhc-csa-hash.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag group">group</span></td><td>normalized</td><td>层组 HCA + TopK MoE（20 层）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/group-hca-topk.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag decoder">decoder</span></td><td>normalized</td><td>HCA + TopK MoE Block 数据流（模块阶段级）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/decoder-hca-topk.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag kv">kv</span></td><td>normalized</td><td>KV 新投影路径（Attention 接收的 hidden_states → 新 KV）（化简后）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/kv-hca-topk-normalized.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag attention">attention</span></td><td>normalized</td><td>DeepSeek Attention（Q 低秩路径 + 共享 KV + 压缩/索引 + QKᵀ/AV + 输出投影）（化简后）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/attention-hca-topk-normalized.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag moe">moe</span></td><td>normalized</td><td>HCA + TopK MoE FFN/MoE 内部计算</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/moe-hca-topk.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag mhc">mhc</span></td><td>normalized</td><td>HCA + TopK MoE mHC 多流混合与残差</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/mhc-hca-topk.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag group">group</span></td><td>normalized</td><td>层组 CSA + TopK MoE（20 层）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/group-csa-topk.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag decoder">decoder</span></td><td>normalized</td><td>CSA + TopK MoE Block 数据流（模块阶段级）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/decoder-csa-topk.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag kv">kv</span></td><td>normalized</td><td>KV 新投影路径（Attention 接收的 hidden_states → 新 KV）（化简后）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/kv-csa-topk-normalized.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag attention">attention</span></td><td>normalized</td><td>DeepSeek Attention（Q 低秩路径 + 共享 KV + 压缩/索引 + QKᵀ/AV + 输出投影）（化简后）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/attention-csa-topk-normalized.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag moe">moe</span></td><td>normalized</td><td>CSA + TopK MoE FFN/MoE 内部计算</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/moe-csa-topk.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag mhc">mhc</span></td><td>normalized</td><td>CSA + TopK MoE mHC 多流混合与残差</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/mhc-csa-topk.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag kv">kv</span></td><td>raw</td><td>KV 新投影路径（Attention 接收的 hidden_states → 新 KV）（原始语义图）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/kv-csa-topk-raw.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+<tr><td><span class="tag attention">attention</span></td><td>raw</td><td>DeepSeek Attention（Q 低秩路径 + 共享 KV + 压缩/索引 + QKᵀ/AV + 输出投影）（原始语义图）</td><td><a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/viewer/archify/attention-csa-topk-raw.html" target="_blank" rel="noopener">打开 →</a></td></tr>
+</tbody></table>
+
+<h2>11 张代表截图（T13 round-3，绑定本候选）</h2>
+<div class="grid"><a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-network.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-network.png" loading="lazy" alt="diagram-network"><span>diagram-network</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-decoder-csa-topk.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-decoder-csa-topk.png" loading="lazy" alt="diagram-decoder-csa-topk"><span>diagram-decoder-csa-topk</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-kv-csa-topk.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-kv-csa-topk.png" loading="lazy" alt="diagram-kv-csa-topk"><span>diagram-kv-csa-topk</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-attention-csa-topk.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-attention-csa-topk.png" loading="lazy" alt="diagram-attention-csa-topk"><span>diagram-attention-csa-topk</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-attention-csa-topk-tall.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-attention-csa-topk-tall.png" loading="lazy" alt="diagram-attention-csa-topk-tall"><span>diagram-attention-csa-topk-tall</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-moe-csa-topk.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-moe-csa-topk.png" loading="lazy" alt="diagram-moe-csa-topk"><span>diagram-moe-csa-topk</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-mhc-csa-topk.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/diagram-mhc-csa-topk.png" loading="lazy" alt="diagram-mhc-csa-topk"><span>diagram-mhc-csa-topk</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/wrapper-moe-csa-topk.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/wrapper-moe-csa-topk.png" loading="lazy" alt="wrapper-moe-csa-topk"><span>wrapper-moe-csa-topk</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/panel-network.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/panel-network.png" loading="lazy" alt="panel-network"><span>panel-network</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/panel-group-csa-topk.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/panel-group-csa-topk.png" loading="lazy" alt="panel-group-csa-topk"><span>panel-group-csa-topk</span></a>
+<a class="shot" href="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/panel-block-csa-topk.png" target="_blank" rel="noopener"><img src="../../docs/tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/screenshots/panel-block-csa-topk.png" loading="lazy" alt="panel-block-csa-topk"><span>panel-block-csa-topk</span></a></div>
+
+<h2>审核时建议逐项记录</h2>
+<div class="hint"><ol class="check">
+ <li><b>层级与数量</b>：2+1+20+20=43 层、4 组是否与模型 config 一致；MTP 层 78 是否明确不在主干。</li>
+ <li><b>主链与分支</b>：是否单向、无向上回流；残差/分支是否向下游汇合；是否有一眼看不明白的长线。</li>
+ <li><b>维度与命名</b>：箭头是否标形状且用全称（<code>batch_size</code>/<code>seqlen</code>/<code>kv_sequence_length</code>/<code>q_lora_rank</code>…）；Linear 是否保留实例名（<code>q_a_proj</code> 等）。</li>
+ <li><b>缓存与状态</b>：主 KV、压缩 KV、indexer 缓存是否前态→计算→后态；有没有把历史长度和本次长度混用。</li>
+ <li><b>Attention / Indexer</b>：Q 低秩、共享 KV、csa/hca 压缩与 top-k 选择是否可读；raw 与 normalized 的差异是否看得出来。</li>
+ <li><b>FFN / MoE / mHC</b>：MoE 路由是否标为未知、专家模板是否只展开一份；mHC 4 流是否读得懂。</li>
+ <li><b>来源</b>：节点卡片里的源码文件/行号是否能对上 <code>hflib/transformers@536ecc0</code>。</li>
+ <li><b>Excel</b>：公式是否可编辑、未知输入是否不按 0 计、层组小计与整网串行汇总是否合理。</li>
+ <li><b>整体</b>：哪几张图需要重排/合并/拆分；哪些文字需要改写；哪些信息希望默认展开。</li>
+</ol></div>
+
+<h2>已知边界（不是缺陷，先说明）</h2>
+<div class="hint">
+ <p>长图需沿阅读方向滚动；主画布会截断长文字，完整字段在详情/JSON；raw 对照只覆盖 csa-topk 的 Attention/KV（T12 约定），其余层组只有 normalized；ONNX 未生成（缺依赖，单列）；Excel 内部性能公式为已确认的 CUBE/VEC 粗估，不是实测。</p>
+ <p>另外：共享代码里“lane 路由边丢标签”的问题（T14 round-3 已登记，830 条，其中 DeepSeek 174 条）也影响本候选；本页展示的是 T13 冻结产物，返修后是否重建 DeepSeek 由下一轮需求决定。</p>
+</div>
+
+<h2>相关记录</h2>
+<p class="lead">
+ <a href="../tasks/model-structure-2026-10-28/T13-decoder-review/acceptance.md" target="_blank" rel="noopener">T13 验收</a> ·
+ <a href="../tasks/model-structure-2026-10-28/T13-decoder-result.md" target="_blank" rel="noopener">T13 结果报告</a> ·
+ <a href="../tasks/model-structure-2026-10-28/T13-decoder-verify/round-3/browser-checks.json" target="_blank" rel="noopener">浏览器检查回执</a> ·
+ <a href="../../structure_reader/outputs/deepseek_v4_flash_0731_hf/19735c597e42a48da31384fc17cf8821757a81d49ddb0b2bd49c6f94bbab1393/reports/source_manifest.json" target="_blank" rel="noopener">来源身份清单</a>
+</p>
+</div></body></html>

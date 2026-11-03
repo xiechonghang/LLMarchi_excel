@@ -13,6 +13,11 @@ import onnx
 from onnx import helper, numpy_helper, TensorProto
 
 from structure_reader.onnx_module import builders
+from structure_reader.onnx_module.builders_m2 import (
+    build_hca_csa, build_swa_cache, build_swa_core, build_hash_route_prod,
+    build_hca_cache, build_swa_mask, build_hca_mask)
+import ast, re
+from structure_reader.render.display_names import PARAM_NAMES, TOKENS, expand_display_text
 from structure_reader.onnx_module.modeling import (
     DTYPE, IR_VERSION, OPSET, derive_compress_rope, derive_main_rope)
 from structure_reader.onnx_module.view import proto_display_graph, proto_details
@@ -39,13 +44,98 @@ def _type_of(dtype: str):
             "tensor(float)": FLOAT32, "tensor(int64)": TensorProto.INT64}[dtype]
 
 
+_STATIC_DIM_VALUES: dict[str, int] = {}
+_DIM_IDS = {"H", "Dh", "Rq", "Rk", "Nh", "Nkv", "Nhc", "G", "Ro", "M", "W",
+            "E", "K", "Es", "Vocab", "Ih", "Id", "Sit"}
+
+
+def set_static_dims(params: dict) -> None:
+    """从当前 phase 参数建立 symbol/完整名→静态配置值（仅已知 int）。"""
+    vals: dict[str, int] = {}
+    for pid, val in params.items():
+        if pid not in _DIM_IDS:
+            continue
+        if isinstance(val, (int, np.integer)):
+            val = int(val)
+        elif isinstance(val, float) and float(val).is_integer():
+            val = int(val)
+        else:
+            continue
+        vals[pid] = val
+        full = PARAM_NAMES.get(pid)
+        if full:
+            vals[full] = val
+        for alias, name in TOKENS.items():
+            if name == full:
+                vals[alias] = val
+    global _STATIC_DIM_VALUES
+    _STATIC_DIM_VALUES = vals
+
+
+def _try_static(expr: str):
+    """仅当表达式所有标识符均为已知静态维时求值；否则 None（保留符号）。"""
+    names = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expr)
+    if not names or any(n not in _STATIC_DIM_VALUES for n in names):
+        return None
+    py = expr.replace("×", "*").replace("÷", "/")
+    py = re.sub(r"[A-Za-z_][A-Za-z0-9_]*",
+                lambda m: str(_STATIC_DIM_VALUES[m.group(0)]), py)
+    try:
+        tree = ast.parse(py, mode="eval")
+    except SyntaxError:
+        return None
+    allowed = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant, ast.Add,
+               ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.USub, ast.UAdd)
+    if any(not isinstance(n, allowed) for n in ast.walk(tree)):
+        return None
+    try:
+        v = eval(compile(tree, "<dim>", "eval"), {"__builtins__": {}}, {})
+    except Exception:  # noqa: BLE001
+        return None
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    return v if isinstance(v, int) and v >= 0 else None
+
+
+def display_dim(dim):
+    """静态配置维/纯静态组合→dim_value；动态/混合表达式→完整名；未知→unresolved。"""
+    if isinstance(dim, (int, np.integer)):
+        return int(dim)
+    s = str(dim).strip()
+    if re.fullmatch(r"\d+", s):
+        return int(s)
+    if s.startswith("unk__"):
+        return "unresolved_dimension_" + s[len("unk__"):]
+    expr = expand_display_text(s)
+    val = _try_static(expr)
+    if val is not None:
+        return val
+    return expr
+
+
+def apply_display_dims(model) -> None:
+    """仅改 value_info 的 dim_param；不改 dim_value/dtype/tensor/节点/initializer。"""
+    for vi in list(model.graph.input) + list(model.graph.output) + list(model.graph.value_info):
+        tt = vi.type.tensor_type
+        for d in tt.shape.dim:
+            if d.HasField("dim_param"):
+                val = display_dim(d.dim_param)
+                if isinstance(val, int):
+                    d.ClearField("dim_param")
+                    d.dim_value = val
+                else:
+                    d.dim_param = val
+
+
 def gb_to_model(gb, module_id: str, phase: str) -> onnx.ModelProto:
     nodes = []
     for n in gb.nodes:
         nodes.append(helper.make_node(n["op_type"], n["inputs"], n["outputs"],
                                       name=n["name"], **n["attrs"]))
-    inputs = [_vi(i["name"], i["shape"], _type_of(i["dtype"])) for i in gb.inputs]
-    outputs = [_vi(o["name"], o["shape"], _type_of(o["dtype"])) for o in gb.outputs]
+    inputs = [_vi(i["name"], [display_dim(d) for d in i["shape"]], _type_of(i["dtype"]))
+              for i in gb.inputs]
+    outputs = [_vi(o["name"], [display_dim(d) for d in o["shape"]], _type_of(o["dtype"]))
+               for o in gb.outputs]
     inits = []
     total = 0
     for c in gb.inits:
@@ -79,6 +169,7 @@ def _sha(b: bytes) -> str:
 
 
 def build_module(ctx, module_id: str, builder) -> dict:
+    set_static_dims({p["id"]: p.get("value") for p in ctx.phase.get("parameters", [])})
     gb = builder(ctx)
     gb.ensure_unique_names()
     model = gb_to_model(gb, module_id, ctx.pid)
@@ -86,8 +177,11 @@ def build_module(ctx, module_id: str, builder) -> dict:
           "ir_version": IR_VERSION, "node_count_original": len(model.graph.node),
           "weight_inputs": [i["name"] for i in gb.inputs if i["role"] == "weight"],
           "cache_pre_inputs": [i["name"] for i in gb.inputs if i["role"] == "cache_pre"],
+          "persistent_buffer_inputs": [i["name"] for i in gb.inputs
+                                       if i["role"] == "persistent_buffer"],
           "outputs": [{"name": o["name"], "json_id": o.get("json_id", o["name"]),
-                       "role": o["role"], "shape": o["shape"]}
+                       "role": o["role"],
+                       "shape": [display_dim(d) for d in o["shape"]]}
                       for o in gb.outputs],
           "checks": {}}
     # V1 checker
@@ -109,6 +203,7 @@ def build_module(ctx, module_id: str, builder) -> dict:
     try:
         from onnxsim import simplify
         sim, ok = simplify(model, check_n=0, perform_optimization=True)
+        apply_display_dims(sim)
         onnx.checker.check_model(sim, full_check=True)
         orig_names = [n.name for n in model.graph.node]
         sim_names = [n.name for n in sim.graph.node]
@@ -240,11 +335,33 @@ def build_all(workspace_root: Path, project_root: Path, doc: dict, config: dict,
         ctx = builders.Ctx(doc, phase, config, rope_main, rope_compress)
         bundle[phase["id"]] = {}
         report["modules"][phase["id"]] = {}
+        from structure_reader.render.diagram import module_groups
+        present = {g["id"] for g in module_groups(phase) if g["ops"]}
         for mid, fn in REGISTRY.items():
+            if mid not in present:
+                continue
             if modules and mid not in modules:
                 continue
+            attn = doc.get("scope", {}).get("attention_type")
+            mlp = doc.get("scope", {}).get("moe_type")
+            if attn == "heavily_compressed_attention" and mid == "attn_csa":
+                fn_use = build_hca_csa
+            elif attn == "sliding_attention" and mid == "attn_cache":
+                fn_use = build_swa_cache
+            elif attn == "sliding_attention" and mid == "attn_core":
+                fn_use = build_swa_core
+            elif attn == "sliding_attention" and mid == "attn_mask":
+                fn_use = build_swa_mask
+            elif attn == "heavily_compressed_attention" and mid == "attn_cache":
+                fn_use = build_hca_cache
+            elif attn == "heavily_compressed_attention" and mid == "attn_mask":
+                fn_use = build_hca_mask
+            elif mlp == "hash_moe" and mid == "moe_route":
+                fn_use = build_hash_route_prod
+            else:
+                fn_use = fn
             try:
-                res = build_module(ctx, mid, fn)
+                res = build_module(ctx, mid, fn_use)
             except Exception as exc:  # noqa: BLE001 - 逐模块如实记录失败，不伪造
                 report["modules"][phase["id"]][mid] = {
                     "module": mid, "phase": phase["id"], "status": "failed",

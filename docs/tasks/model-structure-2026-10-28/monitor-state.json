@@ -1,0 +1,17 @@
+{
+  "task": "D02",
+  "phase": "rework",
+  "state": "completed_awaiting_acceptance",
+  "review_state": "not_reviewed_latest_rework",
+  "session_title": "实施 D01 图形显示修复",
+  "observed_at": "2026-11-03T08:54:47.631366+08:00",
+  "result_report": "docs/tasks/deepseek-structure-reading-2026-11-01/D02-rework-result.md",
+  "report_sha256": "da9295d3f2a4bd32d76662651b540e49152665772b4ce3253750f04be10f93ab",
+  "candidate": "c47633db4bec814108f664efb4a0898f862c97f49eeaa860291868fa872b2486",
+  "entry": "structure_reader/outputs/deepseek_v4_flash_0731_hf/c47633db4bec814108f664efb4a0898f862c97f49eeaa860291868fa872b2486/viewer/structure.html",
+  "notification_fingerprint": "D02:rework:c47633db:completed_awaiting_acceptance",
+  "notification_required": false,
+  "observation": "D02 rework remains completed awaiting acceptance; report fingerprint unchanged. Current visible session final reply00:58, empty input and Send arrow; no active stop button or new user-input request. Already notified; no new actionable change.",
+  "screenshot": "/private/tmp/dsh-monitor-20261103-0846.png",
+  "automation_status": "ACTIVE; preserved existing active state; prompt retargeted from historical T14 to current D-series records"
+}

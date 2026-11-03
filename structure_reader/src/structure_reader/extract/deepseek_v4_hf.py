@@ -1,13 +1,15 @@
-"""DeepSeek-V4-Flash HF decoder 阅读数据提取（里程碑一样板：layer_idx=4，CSA+TopK MoE）。
+"""DeepSeek-V4-Flash 单 Block 结构提取（一份参数化结构 + 场景参数）。
 
 从 rules/deepseek_v4_hf.py 解释的有效配置与本地官方 Transformers 检出源码，
-构建 hf_reading_contract_v1 冻结接口的 reading_document（dict）。HTML 与
-Excel 消费同一份文档；本模块不生成渲染文件、不执行模型、不加载权重。
+构建**一份** Block 结构（``hf_layer_structure.v1``）供分层浏览页使用；同一份结构
+再由 ``extract/hf_scenario.py`` 投影成既有 ``hf_decoder_reading.v1`` 的
+prefill/decode 阶段（Excel 两表、单层阅读页、可选 ONNX 仍消费该冻结接口）。
+本模块不生成渲染文件、不执行模型、不加载权重。
 
 样板范围（真实 layer_idx=4）：
 - 结构组合 compressed_sparse_attention + moe（TopK 路由），两处 mHC。
-- prefill：T 个新 token、空缓存起步的完整 Decoder 路径。
-- decode：T=1 个新 token（符号 T 保留）、P 个历史 token 缓存前提的完整 Decoder 路径。
+- 结构 shape 保留符号 ``seqlen``（本次新 token 数）与 ``kvcachelen``（调用前
+  逻辑历史 token 数）；prefill/decode 只是场景预设，不是两套结构事实。
 
 表达事实（modeling_deepseek_v4.py 行号按本地检出 536ecc00…，下称 modeling）：
 - DecoderLayer（:1161-1185）：attn_hc→input_layernorm→Attention→post 扩展 +
@@ -34,7 +36,7 @@ Excel 消费同一份文档；本模块不生成渲染文件、不执行模型�
   集合+因果阈值，scatter 0/-inf，:690-699）。
 - Lightning Indexer（:504-583）：kv_proj/gate_proj(→2·Id)→同 Ca/Cb 重叠布局→
   softmax 汇聚→kv_norm→RoPE→q_b_proj(q_residual)→q RoPE→scorer
-  （:452-456，ReLU(Q·K^T)·Id^-0.5·weights_proj 求和→[B,S,T]）→future_mask
+  （:452-456，ReLU(Q·K^T)·Id^-0.5·weights_proj 求和→[B,S,seqlen]）→future_mask
   （entry>=causal_threshold 处 -inf）→topk(min(Ki,len))→无效位 -1 哨兵。
 - HCA 缓存层与 CSA 缓存层（modeling:156-297；DynamicSlidingWindowLayer 基类
   cache_utils:211-294）：主 KV 持久保存 W-1=127 尾部、本次可读 full；
@@ -50,11 +52,13 @@ Excel 消费同一份文档；本模块不生成渲染文件、不执行模型�
   float（0 可见 / -inf 屏蔽），q_offset=累积历史、kv_offset=max(cumulative-W+1,0)。
   Attention 内在压缩条目拼接后再扩展（cat block_bias 或 0 填充，:837-841）。
 
-缓存阶段区别：
-- prefill：缓存起步为空（keys 空 tensor、entry_count=0、buffer=None、overlap=None）；
-  update 惰性初始化后 full=T 个新 KV。
-- decode：缓存已含历史（keys 为 W-1 尾部、entry_count=N_h、buffer 为上次余量、
-  overlap 为上次满窗 Ca 尾）；full=cat(keys_tail, 新kv)。
+缓存状态由场景参数表达（同一结构，无第二套阶段事实）：
+- 空缓存 Prefill（kvcachelen=0）：keys 为 0 长度惰性 tensor、entry_count=0、
+  buffer=None、overlap=None；update 后 full=seqlen 个新 KV。
+- 非零历史 Decode（kvcachelen>0）：keys 为最近 min(kvcachelen, W-1) 个位置的尾部、
+  entry_count=kvcachelen//M（连续执行前提）、buffer 为上次余量、overlap 为上次
+  满窗 Ca 尾；full=cat(keys_tail, 新 KV)。单 token 只是 Decode 场景预设
+  （seqlen=1），不限制符号 seqlen。
 
 本样板所有算子均按源码显式表达，无 internal_unanalyzed 黑盒（黑盒机制保留在
 接口上，当前文档不使用；量化执行/设备 kernel 明确列于 coverage_notes 未覆盖）。
@@ -64,6 +68,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from structure_reader.extract.hf_scenario import STRUCTURE_SCHEMA
 from structure_reader.rules.deepseek_v4_hf import (
     SOURCE_FILES,
     HfModelValues,
@@ -73,43 +78,101 @@ from structure_reader.rules.deepseek_v4_hf import (
 __all__ = [
     "ReadingDocError",
     "SAMPLE_LAYER_INDEX",
+    "STRUCTURE_SCHEMA",
+    "build_block_structure",
+    "build_layer_documents",
+    "build_layer_structure",
     "build_reading_document",
 ]
 
 SAMPLE_LAYER_INDEX = 4
 SCHEMA = "hf_decoder_reading.v1"
+# 一份参数化 Block 结构的 schema 定义在 hf_scenario（上面的 import 复用同一常量，不写两遍）。
+
+# 场景派生量表达式（白名单：整数/变量/+ - * // %/min/max）。参数表的 expression
+# 与 derivations 共用同一份字符串，避免同一条公式写两遍而漂移。
+_EXPR_LKV = "min(kvcachelen, W - 1) + seqlen"
+_EXPR_PERSIST = "min(kvcachelen + seqlen, W - 1)"
+_EXPR_TBUF = "kvcachelen % M"
+_EXPR_TBUF_POST = "(kvcachelen % M + seqlen) % M"
+_EXPR_NWIN = "(kvcachelen % M + seqlen) // M"
+_EXPR_NCOMP = "kvcachelen // M + N_win"
+_EXPR_POS_FIRST = "(kvcachelen // M) * M"
+_EXPR_FUT = "(kvcachelen + seqlen) // M"
+_EXPR_FIRST_THR = "(kvcachelen + 1) // M"
 
 
 class ReadingDocError(ValueError):
     """阅读数据构建失败（配置/范围/事实来源不一致），具名拒绝。"""
 
 
-def build_reading_document(
-    workspace_root: str | Path,
-    layer_index: int = SAMPLE_LAYER_INDEX,
-    model_key: str = "deepseek_v4_flash_0731_hf",
-) -> dict:
-    """构建冻结接口 reading_document（prefill/decode 两阶段，算子按真实阅读顺序）。
+def _block_builder(values: HfModelValues, layer_index: int):
+    """按真实层型选择 Block 结构构建器（四类层组共用一套基类，不复制结构）。"""
+    attention_type = values.layer_type(layer_index)
+    moe_type = values.mlp_layer_type(layer_index)
+    if attention_type == "sliding_attention" and moe_type == "hash_moe":
+        from structure_reader.extract.m2_swa_hash import SWABlockBuilder
+        return SWABlockBuilder(values, layer_index), attention_type, moe_type
+    if attention_type == "compressed_sparse_attention" and moe_type == "hash_moe":
+        from structure_reader.extract.m2_swa_hash import CSAHashBlockBuilder
+        return CSAHashBlockBuilder(values, layer_index), attention_type, moe_type
+    if attention_type == "heavily_compressed_attention" and moe_type == "moe":
+        from structure_reader.extract.m2_hca import HCABlockBuilder
+        return HCABlockBuilder(values, layer_index), attention_type, moe_type
+    if attention_type == "compressed_sparse_attention" and moe_type == "moe":
+        return BlockStructureBuilder(values, layer_index), attention_type, moe_type
+    raise ReadingDocError(
+        f"layer_index={layer_index} 是 {attention_type}+{moe_type}；"
+        "已支持 CSA+TopK、HCA+TopK、SWA+Hash、CSA+Hash 四种真实层型组合"
+    )
 
-    layer_index 必须是 CSA+TopK 组合层（本样板目标）；其他组合属里程碑二，
-    本提取器明确拒绝而非画错结构。
-    """
-    values = load_hf_model_values(workspace_root, model_key=model_key)
+
+def build_block_structure(
+    values: HfModelValues,
+    layer_index: int,
+) -> dict:
+    """构建**一份** Block 结构（参数/张量/算子/缓存注记/派生量），不含阶段复制。"""
     if not 0 <= layer_index < values.num_hidden_layers:
         raise ReadingDocError(
             f"layer_index {layer_index} 越界（0..{values.num_hidden_layers - 1}）"
         )
-    attention_type = values.layer_type(layer_index)
-    moe_type = values.mlp_layer_type(layer_index)
-    if attention_type != "compressed_sparse_attention" or moe_type != "moe":
-        raise ReadingDocError(
-            f"layer_index={layer_index} 是 {attention_type}+{moe_type}；"
-            "本提取器样板范围限定 CSA+TopK（其余变体属里程碑二，不拼造组合）"
-        )
+    builder, attention_type, moe_type = _block_builder(values, layer_index)
+    block = builder.build()
+    block["layer_index"] = layer_index
+    block["attention_type"] = attention_type
+    block["moe_type"] = moe_type
+    return block
 
-    prefill = _PhaseBuilder(values, layer_index, "prefill").build()
-    decode = _PhaseBuilder(values, layer_index, "decode").build()
-    return {
+
+_SCOPE_NOTES = [
+    "范围：单个 decoder Block（同一层组只保留一份模板，真实层索引与顺序见整网层组）。",
+    "实现路径：transformers eager（modeling_deepseek_v4.py:1195-1213 声明仅支持 eager）；"
+    "根配置声明 FP8 量化，本图只表达 HF 逻辑 eager 路径，不分析量化执行与设备 kernel。",
+    "静态结构一致为目标：不加载权重、不运行模型、不做数值等价；"
+    "shape 保留符号 seqlen/kvcachelen，场景预设只绑定取值，不改变结构。",
+    "同一权重/激活张量可被多个算子引用（共享引用非重复定义）；"
+    "缓存调用前/调用后以两个张量分别表达，不混为原地更新。",
+]
+
+
+def build_layer_documents(
+    workspace_root: str | Path,
+    layer_index: int = SAMPLE_LAYER_INDEX,
+    model_key: str = "deepseek_v4_flash_0731_hf",
+) -> tuple[dict, dict]:
+    """一次构建，两种同源表示：一份 Block 结构 + 既有 prefill/decode 场景投影。
+
+    返回 ``(structure_document, legacy_reading_document)``；两者共享同一份
+    tensors/operators/连接，不存在第二套阶段结构。
+    """
+    from structure_reader.extract.hf_scenario import (
+        project_legacy_phase, structure_document)
+
+    values = load_hf_model_values(workspace_root, model_key=model_key)
+    block = build_block_structure(values, layer_index)
+    block["scope_notes"] = list(_SCOPE_NOTES)
+    structure = structure_document(values, block)
+    legacy = {
         "schema": SCHEMA,
         "model": {
             "model_key": values.model_key,
@@ -120,48 +183,70 @@ def build_reading_document(
         },
         "scope": {
             "layer_index": layer_index,
-            "attention_type": attention_type,
-            "moe_type": moe_type,
+            "attention_type": block["attention_type"],
+            "moe_type": block["moe_type"],
             "analysis_path": "eager",
             "notes": [
-                "样板范围：单个 decoder 层（layer_idx=4，compressed_sparse_attention + TopK MoE，两处 mHC）；"
-                "整网 Embedding/43 层展开/HyperHead/Final Norm/LM head 属里程碑三，明确未覆盖。",
+                f"样板范围：单个 decoder 层（layer_idx={layer_index}，"
+                f"{block['attention_type']} + {block['moe_type']}，两处 mHC）；"
+                "整网 Embedding/43 层展开/HyperHead/Final Norm/LM head 见整网总览。",
                 "实现路径：transformers eager（modeling_deepseek_v4.py:1195-1213 声明仅支持 eager："
                 "_supports_flash_attn/_supports_sdpa/_supports_flex_attn 均为 False）；"
                 "根配置声明 FP8 量化（quantization_config），本样板只表达 HF 逻辑 eager 路径，"
                 "不分析量化执行与设备 kernel。",
-                "静态结构一致为目标：不加载权重、不运行模型、不做数值等价；B/T/P 等调用维度保留符号。",
-                "hash_moe 层（0/1/2）的 HashRouter input_ids 查表路由属其他变体，不在本样板；"
-                "SWA 层（0/1）无压缩器；本层缓存结构为 DeepseekV4CSACache。",
+                "静态结构一致为目标：不加载权重、不运行模型、不做数值等价；"
+                "seqlen/kvcachelen 保留符号，两阶段只是场景预设。",
                 "同一权重/激活张量可被多个算子引用（共享引用非重复定义）；阶段间 id 按阶段作用域解释。",
             ],
         },
-        "phases": [prefill, decode],
+        "phases": [
+            project_legacy_phase(block, phase_id) for phase_id in ("prefill", "decode")
+        ],
     }
+    return structure, legacy
+
+
+def build_layer_structure(
+    workspace_root: str | Path,
+    layer_index: int = SAMPLE_LAYER_INDEX,
+    model_key: str = "deepseek_v4_flash_0731_hf",
+) -> dict:
+    """构建 ``hf_layer_structure.v1``：一份 Block 结构 + 场景预设/派生值。"""
+    return build_layer_documents(workspace_root, layer_index, model_key)[0]
+
+
+def build_reading_document(
+    workspace_root: str | Path,
+    layer_index: int = SAMPLE_LAYER_INDEX,
+    model_key: str = "deepseek_v4_flash_0731_hf",
+) -> dict:
+    """既有冻结接口 ``hf_decoder_reading.v1``：同一份结构的 prefill/decode 场景投影。
+
+    Excel 两表、单层阅读页与可选 ONNX 仍消费该接口；两阶段不再各自构建结构，
+    只绑定场景取值（Prefill: kvcachelen=0；Decode: seqlen=1 预设）。
+    """
+    return build_layer_documents(workspace_root, layer_index, model_key)[1]
 
 
 # ---------------------------------------------------------------------------
-# 阶段构建
+# Block 结构构建
 # ---------------------------------------------------------------------------
 
 
-class _PhaseBuilder:
-    """单阶段阅读数据累积器：参数→边界/缓存张量→算子按真实阅读顺序。
+class BlockStructureBuilder:
+    """单 Block 结构累积器：参数→边界/缓存张量→算子按真实阅读顺序。
 
-    prefill 与 decode 同构（同一模板方法）；差异点：
-    - P 参数值（0 vs 符号）、T 参数值（null vs 1）。
-    - 缓存张量 note 与读写算子 note（空起步 vs 历史前提）。
-    - N_win/N_comp/N_kv/L_mask 的派生式相同、示例前提取决于阶段。
+    一份结构服务全部场景：shape 用符号 seqlen/kvcachelen；调用前状态、闭窗与否
+    等条件写进注记与 derivations（由场景求值），不按阶段复制张量/算子。
     """
 
-    def __init__(self, values: HfModelValues, layer_idx: int, phase: str):
+    def __init__(self, values: HfModelValues, layer_idx: int):
         self.values = values
         self.layer_idx = layer_idx
-        self.phase = phase
-        self.is_prefill = phase == "prefill"
         self.parameters: list[dict] = []
         self.tensors: list[dict] = []
         self.operators: list[dict] = []
+        self.derivations: list[dict] = []
         self.cache_notes: list[str] = []
         self.coverage_notes: list[str] = []
 
@@ -193,6 +278,13 @@ class _PhaseBuilder:
         })
         return oid
 
+    def derivation(self, did, label, expression, note) -> str:
+        """场景派生量：纯表达式（白名单求值），由场景绑定 seqlen/kvcachelen 后求值。"""
+        self.derivations.append({
+            "id": did, "label": label, "expression": expression, "note": note,
+        })
+        return did
+
     def src(self, locator, note) -> dict:
         return {
             "path": SOURCE_FILES["modeling_deepseek_v4.py"],
@@ -215,23 +307,22 @@ class _PhaseBuilder:
     def build(self) -> dict:
         v = self.values
         title = (
-            f"Prefill Decoder（layer_idx={self.layer_idx}，{v.num_hidden_layers} 层主干代表样板："
-            f"CSA + TopK MoE + 双 mHC，缓存空起步）"
-            if self.is_prefill
-            else f"Decode Decoder（layer_idx={self.layer_idx}，CSA + TopK MoE + 双 mHC；"
-                 f"历史缓存前提，T=1）"
+            f"Decoder Block 结构（layer_idx={self.layer_idx}，{v.num_hidden_layers} 层主干代表模板："
+            "CSA + TopK MoE + 双 mHC；同一结构由 seqlen/kvcachelen 场景参数化）"
         )
         self._build_parameters()
+        self._build_derivations()
         self._build_boundary_and_cache()
         self._decoder_layer_flow()
         self._build_cache_notes()
         self._build_coverage_notes()
         return {
-            "id": self.phase,
+            "id": "block",
             "title": title,
             "parameters": self.parameters,
             "tensors": self.tensors,
             "operators": self.operators,
+            "derivations": self.derivations,
             "cache_notes": self.cache_notes,
             "coverage_notes": self.coverage_notes,
         }
@@ -246,17 +337,14 @@ class _PhaseBuilder:
 
         self.param("B", "B", "batch 批大小", None, None,
                    "调用输入维度，静态分析保留符号", [])
-        if self.is_prefill:
-            self.param("T", "T", "prefill 新 token 数（本次输入序列长度）", None, None,
-                       "调用输入维度；压缩窗口数、mask 形状均由 T 派生", [])
-            self.param("P", "P", "历史缓存 token 数", 0, "P=0（prefill 空缓存起步）",
-                       "首次调用无历史；结构前提，非运行时探值", [])
-        else:
-            self.param("T", "T", "decode 本次 token 数", 1, "T=1（decode 单 token）",
-                       "shape 符号仍写 T 保持同构表达；值/表达式记录 T=1", [])
-            self.param("P", "P", "decode 起步前历史 token 数", None,
-                       "P=T_prev+T_prev2+…（历史调用累积）",
-                       "缓存内容有效性来自调用历史，不由本图证明", [])
+        self.param("seqlen", "seqlen", "本次输入的新 token 数（seqlen）", None, None,
+                   "场景参数：本次网络调用新输入的 token 数，不含此前历史。"
+                   "Prefill 可为任意新 token 数；Decode 预设 seqlen=1 只是场景取值，"
+                   "不限制符号 seqlen（压缩窗口数、mask 形状均由 seqlen 派生）", [])
+        self.param("kvcachelen", "kvcachelen", "调用前已处理的逻辑历史 token 总数", None, None,
+                   "场景参数：调用前逻辑历史 token 总数（如历史 4096 就填 4096）；"
+                   "空缓存 Prefill 为 0。它不等于物理保留长度 min(kvcachelen, W-1)，"
+                   "也不是缓存字节数；缓存内容有效性来自调用历史，不由本图证明", [])
         self.param("H", "H", "hidden_size 隐层维度", v.hidden_size, None,
                    "config.hidden_size", [cfg("hidden_size", "根配置字段")])
         self.param("Nh", "Nh", "num_attention_heads 注意力头数", v.num_attention_heads, None,
@@ -338,120 +426,162 @@ class _PhaseBuilder:
                    [cfg("rope_scaling.factor", "根配置字段"),
                     self.srcf("modeling_rope_utils.py", "345-483", "_compute_yarn_parameters")])
         self.param("Nwin", "N_win", "本调用压缩器系列新闭窗数（数据相关）", None,
-                   "N_win = floor((buffer_len['compressor'] + T) / M)（buffer_len 为调用前窗口缓冲余量）",
-                   "store_compression_weights 取 M 对齐前缀长度//M；buffer_len 取决于调用历史，"
-                   "静态保留派生式；prefill 空缓存起步 buffer_len=0",
+                   f"N_win = {_EXPR_NWIN}（buffer 余量取 kvcachelen % M，连续执行前提）",
+                   "store_compression_weights 取 M 对齐前缀长度//M；余量取决于调用历史，"
+                   "本式按「空态起步、连续正常执行」推导；任意裁剪/回滚快照不在分析范围",
                    [src("216-224", "usable=(kv.shape[1]//M)*M")])
         self.param("Nwin_i", "N_win_i", "本调用 Indexer 系列新闭窗数（数据相关）", None,
-                   "N_win_i = floor((buffer_len['indexer'] + T) / M)",
-                   "Indexer 与压缩器共用同窗宽 M，但 buffer/entry_count/overlap 按 'indexer' 键独立维护，"
-                   "历史余量可不同，故闭窗数独立成参",
+                   f"N_win_i = {_EXPR_NWIN}",
+                   "Indexer 与压缩器共用同窗宽 M，但 buffer/entry_count/overlap 按 'indexer' 键独立维护；"
+                   "连续正常执行下与 N_win 同值，任意快照下可不同",
                    [src("519-523", "store_compression_weights('indexer', kv, gate)"),
                     src("268-276", "buffer_kv/buffer_gate['indexer'] 独立键位")])
         self.param("Ncomp", "N_comp", "压缩条目总数（调用后持久累计，数据相关）", None,
-                   "N_comp = entry_count('compressor')（调用后 = 调用前 + N_win）",
+                   f"N_comp = {_EXPR_NCOMP}",
                    "update_compressor_states 追加本调用新条目并累加计数",
                    [src("226-237", "update_compressor_states")])
         self.param("Lkv", "L_kv", "Attention 主 KV 本次可读长度（数据相关）", None,
-                   "L_kv = min(P, W-1) + T（full=cat(keys持久尾部, kv_new)）",
+                   f"L_kv = {_EXPR_LKV}（full=cat(keys 持久尾部, kv_new)）",
                    "keys 持久保存最近 min(累计, W-1) 个位置（短历史不足 W-1 时全保留）；"
-                   "full 是本次参与 Attention 的完整视图，与调用后持久长度 min(P+T, W-1) 分开表达",
+                   "full 是本次参与 Attention 的完整视图，与调用后持久长度 "
+                   "min(kvcachelen+seqlen, W-1) 分开表达",
                    [src("189-201", "HCACache.update 返回 full；持久 keys=full[:, :, -(W-1):, :]",
-                      )])
+                       )])
         self.param("Lmask", "L_mask", "模型级 mask 的 KV 长度（数据相关）", None,
-                   "L_mask = min(P, W-1) + T（is_full=(P≥W) 时 W-1+T，否则 P+T；"
-                   "按首个 sliding 层（层0）的 cumulative_length=P 计算）",
-                   "create_sliding_window_causal_mask 按首个 sliding 层尺寸构造 4D float mask；"
+                   f"L_mask = {_EXPR_LKV}",
+                   "get_mask_sizes 的两个分支（is_full→W-1+query，否则 cumulative+query）"
+                   "在 min(cumulative, W-1) 下等价；按首个 sliding 层（层0）的 cumulative_length"
+                   "=kvcachelen 计算。create_sliding_window_causal_mask 构造 4D float mask；"
                    "本层 Attention 内拼接压缩条目后再扩展",
                    [self.srcf("masking_utils.py", "1078-1162", "create_sliding_window_causal_mask"),
                     self.srcf("cache_utils.py", "276-286",
                               "get_mask_sizes：is_full→W-1+query，否则 cumulative+query")])
         # ---- 缓存长度符号（运行时数据相关，全图 shape 引用，含义/公式在此统一定义）----
         self.param("Tbuf", "Tbuf", "压缩器窗口缓冲余量长度（调用前）", None,
-                   "Tbuf = len(buffer_kv['compressor'])（调用前，<M 或 0）",
+                   f"Tbuf = {_EXPR_TBUF}（连续执行前提；<M 或 0）",
                    "store_compression_weights 合并后取 M 对齐前缀，余量即 Tbuf；"
-                   "prefill 起步 None（0 长度），decode 起步为上次余量",
+                   "空缓存起步为 0 长度（None），非零历史起步为上次余量",
                    [src("216-224", "usable=(kv.shape[1]//M)*M；buffer=kv[:, usable:]")])
         self.param("Tbufp", "Tbuf'", "压缩器窗口缓冲余量长度（调用后）", None,
-                   "Tbuf' = (Tbuf + T) % M",
+                   f"Tbuf' = {_EXPR_TBUF_POST}",
                    "本调用写回 buffer 的余量（c_store_window 输出 cache_buffer_c_kv_post）",
                    [src("216-224", "usable=(kv.shape[1]//M)*M；buffer=kv[:, usable:]")])
         self.param("Tbufi", "Tbuf_i", "Indexer 窗口缓冲余量长度（调用前）", None,
-                   "Tbuf_i = len(buffer_kv['indexer'])（调用前）",
+                   f"Tbuf_i = {_EXPR_TBUF}",
                    "'indexer' 键独立缓冲，与 Tbuf 可不同",
                    [src("519-523", "store_compression_weights('indexer', kv, gate)")])
         self.param("Tbufip", "Tbuf_i'", "Indexer 窗口缓冲余量长度（调用后）", None,
-                   "Tbuf_i' = (Tbuf_i + T) % M",
+                   f"Tbuf_i' = {_EXPR_TBUF_POST}",
                    "i_store_window 写回余量（cache_buffer_i_kv_post）",
                    [src("519-523", "store_compression_weights('indexer', kv, gate)")])
         self.param("Tcc", "Tcc", "压缩器已发射压缩条目数（调用前）", None,
-                   "Tcc = entry_count['compressor']（调用前）",
-                   "prefill 起步 None（0 条）；调用后 N_comp=Tcc+N_win",
+                   "Tcc = kvcachelen // M（连续执行前提）",
+                   "空缓存起步为 0 条；调用后 N_comp=Tcc+N_win",
                    [src("226-237", "update_compressor_states 追加并累加")])
         self.param("Tci", "Tci", "Indexer 已发射压缩条目数（调用前）", None,
-                   "Tci = entry_count['indexer']（调用前）",
+                   "Tci = kvcachelen // M（连续执行前提）",
                    "Indexer 系列（'indexer' 键）；调用后条目数=Tci+N_win_i；"
                    "i_scores/topk 轴使用追加后条目（:556-566），保持 Tci 只表调用前数量",
                    [src("556-558", "compressed_kv = update_compressor_states('indexer', compressed)")])
+
+    def _build_derivations(self) -> None:
+        """场景派生量：同一份结构按 seqlen/kvcachelen 绑定求值（未知不默认 0）。"""
+        common_note = "按固定配置 + 「空态起步、连续正常执行」前提推导；不覆盖裁剪/回滚后的自定义快照"
+        self.derivation("L_kv", "本次可读主 KV 长度", _EXPR_LKV,
+                        "持久尾部（最多 W-1）+ 本调用新 token；物理保留长度不等于 kvcachelen。"
+                        + common_note)
+        self.derivation("L_mask", "模型级 mask KV 长度", _EXPR_LKV,
+                        "与 L_kv 同式；get_mask_sizes 的 is_full 分支在 min(cumulative, W-1) 下等价。"
+                        + common_note)
+        self.derivation("L_kv_post", "调用后持久主 KV 长度", _EXPR_PERSIST,
+                        "update 后只持久 full 的最后 W-1 个位置（不足 W-1 时全量）。" + common_note)
+        self.derivation("Tbuf", "调用前窗口缓冲余量", _EXPR_TBUF,
+                        "连续执行时 buffer 余量即 kvcachelen % M。" + common_note)
+        self.derivation("Tbuf_post", "调用后窗口缓冲余量", _EXPR_TBUF_POST,
+                        "store_compression_weights 写回 (Tbuf+seqlen)%M 条。" + common_note)
+        self.derivation("N_win", "本调用新闭窗数", _EXPR_NWIN,
+                        "闭窗数 = (Tbuf+seqlen)//M；为 0 时本调用只写回 buffer，"
+                        "overlap/压缩条目分支不执行。" + common_note)
+        self.derivation("N_comp", "调用后压缩条目总数", _EXPR_NCOMP,
+                        "调用前条目（kvcachelen//M）+ 本调用新闭窗。" + common_note)
+        self.derivation("N_win_i", "Indexer 本调用新闭窗数", _EXPR_NWIN,
+                        "连续执行下与 N_win 同值；'indexer' 键独立维护。" + common_note)
+        self.derivation("N_comp_i", "调用后 Indexer 条目总数", _EXPR_NCOMP,
+                        "i_scores/topk 的实际轴长。" + common_note)
+        self.derivation("first_window_position", "本调用首窗绝对位置", _EXPR_POS_FIRST,
+                        "entry_count（调用前）× M；压缩条目位置 = i·M + first_window_position。"
+                        + common_note)
+        self.derivation("future_threshold", "末查询的因果阈值", _EXPR_FUT,
+                        "查询 t 可见 w < (t+1)//M；w 等于阈值（w = (t+1)//M）即屏蔽"
+                        "（源码 :574-581 future_mask=entry>=threshold）；末查询 "
+                        "t=kvcachelen+seqlen-1，故阈值为 (kvcachelen+seqlen)//M。"
+                        + common_note)
+        self.derivation("first_query_threshold", "本调用首个查询的因果阈值",
+                        _EXPR_FIRST_THR,
+                        "首个查询 t=kvcachelen：可见 w < (t+1)//M；w 等于阈值"
+                        "（w = (t+1)//M）即屏蔽（含等于，源码 :574-581）。"
+                        + common_note)
+        self.derivation("Ki_sel", "Indexer 实际 top-k 数", "min(Ki, N_comp_i)",
+                        "top_k=min(index_topk, 本调用更新后条目数)。" + common_note)
 
     # ------------------------------------------------------------------
     # 边界与缓存张量
     # ------------------------------------------------------------------
 
     def _build_boundary_and_cache(self) -> None:
-        prefill = self.is_prefill
         self.tensor(
-            "input_ids", "input_ids", ["B", "T"], ["B", "T"], "boundary",
+            "input_ids", "input_ids", ["B", "seqlen"], ["B", "seqlen"], "boundary",
             "输入 token id（本层 MoE 为 TopK 路由不消费它；整网 embedding 使用；"
             "HashRouter 层才直接查表）",
         )
         self.tensor(
-            "position_ids", "position_ids", ["1", "T"], ["T"], "boundary",
-            "本调用绝对位置（modeling:1335-1337）：arange(T)+P 后 unsqueeze(0)，默认 [1,T]"
-            "（prefill P=0、decode P）；供 RoPE cos/sin、模型级 mask 与 Indexer 因果阈值消费；"
-            "本样板按该默认路径表达（cos/sin 亦为 [1,T,Rk÷2]）；若调用方传入自定义批次位置"
-            "（[B,T]），cos/sin 与阈值随输入 batch 维变化——本图不含该可选输入组合",
+            "position_ids", "position_ids", ["1", "seqlen"], ["seqlen"], "boundary",
+            "本调用绝对位置（modeling:1335-1337）：arange(seqlen)+kvcachelen 后 unsqueeze(0)，"
+            "默认 [1,seqlen]（空缓存 Prefill：kvcachelen=0；非零历史 Decode：kvcachelen=历史长度）；"
+            "供 RoPE cos/sin、模型级 mask 与 Indexer 因果阈值消费；"
+            "本样板按该默认路径表达（cos/sin 亦为 [1,seqlen,Rk÷2]）；若调用方传入自定义批次位置"
+            "（[B,seqlen]），cos/sin 与阈值随输入 batch 维变化——本图不含该可选输入组合",
         )
         self.tensor(
             "hidden_streams_in", "hidden_streams（层输入）",
-            ["B", "T", "Nhc", "H"], ["Nhc", "H"], "boundary",
+            ["B", "seqlen", "Nhc", "H"], ["Nhc", "H"], "boundary",
             "上一 decoder 层输出的 Nhc 路流（层0 来自 embedding 后 expand，modeling:1351）；"
             "单层样板的诚实外部输入边界，无本图内 producer",
         )
         self.tensor(
             "hidden_streams_out", "hidden_streams（层输出）",
-            ["B", "T", "Nhc", "H"], ["Nhc", "H"], "boundary",
+            ["B", "seqlen", "Nhc", "H"], ["Nhc", "H"], "boundary",
             "本层最终输出（ffn 段 mHC 混合后），进入下一层",
         )
         start_note = (
-            "prefill 起步为空（惰性初始化，keys 为 0 长度 tensor）；shape 的持久轴"
-            " min(P,W-1) 在 prefill 取 0"
-            if prefill else "decode 起步已含历史：最近 min(P, W-1) 个位置的 KV 尾部"
-            "（历史不足 W-1 时全保留）"
+            "调用前状态由场景决定：空缓存 Prefill（kvcachelen=0）为惰性初始化、keys 为 0 长度"
+            " tensor（持久轴 min(kvcachelen,W-1)=0）；非零历史 Decode 为最近"
+            " min(kvcachelen, W-1) 个位置的 KV 尾部（历史不足 W-1 时全保留）"
         )
         self.tensor(
             "cache_keys", "CSACache.keys/values（主 KV 滑动持久态，调用前）",
-            ["B", "1", "min(P,W-1)", "Dh"], ["Lkv", "Dh", "W"], "cache",
+            ["B", "1", "min(kvcachelen,W-1)", "Dh"], ["Lkv", "Dh", "W"], "cache",
             f"共享 KV（K=V 同存储，单 KV 头）调用前状态；{start_note}",
         )
         self.tensor(
             "cache_keys_post", "CSACache.keys/values（主 KV 滑动持久态，调用后）",
-            ["B", "1", "min(P+T,W-1)", "Dh"], ["Lkv", "Dh", "W"], "cache",
-            "update 后持久保存 full 的最后 W-1 个位置（累计不足 W-1 时全量，min(P+T,W-1)）；"
+            ["B", "1", "min(kvcachelen+seqlen,W-1)", "Dh"], ["Lkv", "Dh", "W"], "cache",
+            "update 后持久保存 full 的最后 W-1 个位置（累计不足 W-1 时全量，"
+            "min(kvcachelen+seqlen,W-1)）；"
             "与本次可读 full（L_kv）长度分开表达；进入下一调用作为其调用前状态",
         )
         self.tensor(
             "cache_cumlen", "cumulative_length（主 KV 累计长度）",
             [], ["W"], "cache",
             "已累计 token 数（含本调用新 token 前）：决定 get_mask_sizes 的 kv_offset/kv_length 与"
-            "持久保存量；prefill 起步 0，decode 起步 P",
+            "持久保存量；空缓存 Prefill 起步 0，非零历史 Decode 起步 kvcachelen",
         )
         self.tensor(
             "cache_entry_count_c", "entry_count['compressor']（调用前）",
             [], ["M"], "cache",
             "压缩器已发射条目数（调用前）：×M = 下一窗口首 token 绝对位置（first_window_position）；"
-            "与 position_ids 分开维护以保持 prefill→decode→prefill 一致；"
-            + ("prefill 起步 0" if prefill else "decode 起步 = 历史闭窗数"),
+            "与 position_ids 分开维护以保持跨调用连续（空缓存起步 0；非零历史起步 = 历史闭窗数 "
+            "kvcachelen//M，连续执行前提）",
         )
         self.tensor(
             "cache_entry_count_c_post", "entry_count['compressor']（调用后）",
@@ -472,7 +602,7 @@ class _PhaseBuilder:
             "cache_buffer_c_kv", "buffer_kv['compressor']（调用前）",
             ["B", "Tbuf", "2Dh"], ["M"], "cache",
             "两次满窗之间到达的源 token 投影（kv_proj 输出，2·Dh 特征=Ca|Cb 并存）；"
-            + ("起步 None（Tbuf=0）" if prefill else "起步为上次调用余量（<M 条）"),
+            "空缓存起步 None（Tbuf=0），非零历史起步为上次调用余量（<M 条）",
         )
         self.tensor(
             "cache_buffer_c_gate", "buffer_gate['compressor']（调用前）",
@@ -482,7 +612,8 @@ class _PhaseBuilder:
         self.tensor(
             "cache_buffer_c_kv_post", "buffer_kv['compressor']（调用后余量）",
             ["B", "Tbuf'", "2Dh"], ["M"], "cache",
-            "store_compression_weights 写回：本调用合并后取 M 对齐前缀，余量 (Tbuf+T)%M 条"
+            "store_compression_weights 写回：本调用合并后取 M 对齐前缀，余量"
+            " (Tbuf+seqlen)%M 条"
             "（符号表达）留作下调用 buffer",
         )
         self.tensor(
@@ -513,8 +644,8 @@ class _PhaseBuilder:
         self.tensor(
             "cache_compressed_c", "compressed_kv['compressor']（调用前）",
             ["B", "Tcc", "Dh"], ["M", "Dh"], "cache",
-            "CSA 压缩器已发射条目（调用前，RMSNorm+RoPE 后）；"
-            + ("起步 None（Tcc=0）" if prefill else "起步已含历史条目"),
+            "CSA 压缩器已发射条目（调用前，RMSNorm+RoPE 后）；空缓存起步 None（Tcc=0），"
+            "非零历史起步已含历史条目",
         )
         self.tensor(
             "cache_compressed_c_post", "compressed_kv['compressor']（调用后全量）",
@@ -538,9 +669,8 @@ class _PhaseBuilder:
             ["B", "M", "Dh"], ["M", "Dh"], "cache",
             "上一闭窗调用的最后满窗 Ca 尾 chunk[:, -1, :, :Dh]（modeling:290，chunk 为 "
             "[B,N_win,M,2Dh] 视图后取末窗 Ca 半）→[B,M,Dh]；"
-            "仅当该调用 N_win>0 才写入；"
-            + ("prefill 起步 None（首闭窗调用 new_kv[0] 前半为零值/-inf gate，softmax 权重 0）"
-               if prefill else "decode 起步为上次满窗 Ca 尾 [B,M,Dh]"),
+            "仅当该调用 N_win>0 才写入；空缓存起步 None（首闭窗调用 new_kv[0] 前半为零值/"
+            "-inf gate，softmax 权重 0），非零历史起步为上次满窗 Ca 尾 [B,M,Dh]",
         )
         self.tensor(
             "cache_overlap_c_gate", "overlap_gate['compressor']（调用前）",
@@ -585,7 +715,6 @@ class _PhaseBuilder:
     # ------------------------------------------------------------------
 
     def _decoder_layer_flow(self) -> None:
-        prefill = self.is_prefill
         # ==== attn mHC ====
         self._mhc_block("attn", "attn_hc", "hidden_streams_in")
         self._rmsnorm_block("attn", "input_layernorm")
@@ -604,47 +733,47 @@ class _PhaseBuilder:
         p = f"{site}"
 
         self.tensor(
-            f"{p}_mhc_flat", "flattened", ["B", "T", "Nhc×H"], ["Nhc", "H"], "activation",
+            f"{p}_mhc_flat", "flattened", ["B", "seqlen", "Nhc×H"], ["Nhc", "H"], "activation",
             "hidden_streams.view(B, T, -1).float()（:955）",
         )
         self.tensor(
-            f"{p}_mhc_normed", "flattened(input_norm)", ["B", "T", "Nhc×H"], ["Nhc", "H"],
+            f"{p}_mhc_normed", "flattened(input_norm)", ["B", "seqlen", "Nhc×H"], ["Nhc", "H"],
             "activation",
             "UnweightedRMSNorm（eps=EpsN，:71-72）：x*rsqrt(mean(x²)+eps)，无可学习权重",
         )
         self.tensor(
-            f"{p}_mhc_weights", "mhc_projection", ["B", "T", "(2+Nhc)×Nhc"], ["Nhc", "H"],
+            f"{p}_mhc_weights", "mhc_projection", ["B", "seqlen", "(2+Nhc)×Nhc"], ["Nhc", "H"],
             "activation",
             "F.linear(flattened, fn)（:958）；随后 split 出原始 pre_w/post_w/comb_w",
         )
         self.tensor(
-            f"{p}_mhc_pre_w", "pre_w（原始拆分权重）", ["B", "T", "Nhc"], ["Nhc"], "activation",
+            f"{p}_mhc_pre_w", "pre_w（原始拆分权重）", ["B", "seqlen", "Nhc"], ["Nhc"], "activation",
             "flattened.split([hc, hc, hc*hc]) 第一段（:960）——未经 affine/激活的原始值",
         )
         self.tensor(
-            f"{p}_mhc_post_w", "post_w（原始拆分权重）", ["B", "T", "Nhc"], ["Nhc"], "activation",
+            f"{p}_mhc_post_w", "post_w（原始拆分权重）", ["B", "seqlen", "Nhc"], ["Nhc"], "activation",
             "split 第二段（:960）",
         )
         self.tensor(
-            f"{p}_mhc_comb_w", "comb_w（原始拆分矩阵权重）", ["B", "T", "Nhc", "Nhc"],
+            f"{p}_mhc_comb_w", "comb_w（原始拆分矩阵权重）", ["B", "seqlen", "Nhc", "Nhc"],
             ["Nhc"], "activation",
             "split 第三段后 view(..., hc, hc)（:960/:964）——矩阵权重，与 pre/post 的向量本质不同",
         )
         self.tensor(
-            f"{p}_mhc_pre", "pre（坍缩权重系数）", ["B", "T", "Nhc"], ["Nhc"], "activation",
+            f"{p}_mhc_pre", "pre（坍缩权重系数）", ["B", "seqlen", "Nhc"], ["Nhc"], "activation",
             "pre=sigmoid(pre_w·pre_scale+pre_b)+Eps（:968）",
         )
         self.tensor(
-            f"{p}_mhc_post", "post（扩展权重系数）", ["B", "T", "Nhc"], ["Nhc"], "activation",
+            f"{p}_mhc_post", "post（扩展权重系数）", ["B", "seqlen", "Nhc"], ["Nhc"], "activation",
             "post=2·sigmoid(post_w·post_scale+post_b)（:969）；返回给残差段",
         )
         self.tensor(
-            f"{p}_mhc_comb", "comb（混合矩阵系数）", ["B", "T", "Nhc", "Nhc"], ["Nhc"], "activation",
+            f"{p}_mhc_comb", "comb（混合矩阵系数）", ["B", "seqlen", "Nhc", "Nhc"], ["Nhc"], "activation",
             "comb=softmax(comb_w·comb_scale+comb_b)+Eps（:970）→Sinkhorn 列归一+"
             "(Sit-1)×[行归一→列归一]（:976-979）；返回给残差段，使用时转置",
         )
         self.tensor(
-            f"{p}_mhc_collapsed", "collapsed（坍缩流）", ["B", "T", "H"], ["Nhc", "H"],
+            f"{p}_mhc_collapsed", "collapsed（坍缩流）", ["B", "seqlen", "H"], ["Nhc", "H"],
             "activation",
             "collapsed=Σ_n pre_n·stream_n（:983）；进入 norm→子层",
         )
@@ -718,7 +847,7 @@ class _PhaseBuilder:
         src = self.src
         label = "注意力子层前" if site == "attn" else "MoE 子层前"
         self.tensor(
-            f"{p}_normed", f"{ln_name}(collapsed)", ["B", "T", "H"], ["H", "EpsN"],
+            f"{p}_normed", f"{ln_name}(collapsed)", ["B", "seqlen", "H"], ["H", "EpsN"],
             "activation",
             "RMSNorm：fp32 计算、weight fp32 乘、出口 .to(input_dtype)（:54-60）",
         )
@@ -737,18 +866,17 @@ class _PhaseBuilder:
     def _attention_block(self) -> None:
         """Attention 完整链：低秩 Q、共享 KV、部分 RoPE、缓存更新、CSA 压缩器、
         Indexer、mask 扩展、eager QK→scale→mask→sink→softmax→AV、逆 RoPE、分组输出投影。"""
-        prefill = self.is_prefill
         src = self.src
         v = self.values
         P = f"attn"
 
         # --- Q 支路 ---
         self.tensor(
-            "q_a", "q_a_proj(hidden)", ["B", "T", "Rq"], ["Rq", "H"], "activation",
+            "q_a", "q_a_proj(hidden)", ["B", "seqlen", "Rq"], ["Rq", "H"], "activation",
             "低秩 Q 下投影",
         )
         self.tensor(
-            "q_a_normed", "q_a_norm(q_a)", ["B", "T", "Rq"], ["Rq", "EpsN"], "activation",
+            "q_a_normed", "q_a_norm(q_a)", ["B", "seqlen", "Rq"], ["Rq", "EpsN"], "activation",
             "RMSNorm(q_lora_rank, eps=EpsN)（:784）；即 HF :813 的 q_residual，"
             "同时供 Indexer 的 q_b_proj 使用（:561）",
         )
@@ -765,16 +893,16 @@ class _PhaseBuilder:
             "Linear(Rq, Nh*Dh, bias=False)",
         )
         self.tensor(
-            "q_head", "q.view/transpose", ["B", "Nh", "T", "Dh"], ["Nh", "Dh"], "activation",
+            "q_head", "q.view/transpose", ["B", "Nh", "seqlen", "Dh"], ["Nh", "Dh"], "activation",
             "q_b_proj(q_a_normed).view(B,T,-1,Dh).transpose(1,2)（:814）",
         )
         self.tensor(
-            "q_normed", "q_b_norm(q_head)", ["B", "Nh", "T", "Dh"], ["Nh", "Dh"],
+            "q_normed", "q_b_norm(q_head)", ["B", "Nh", "seqlen", "Dh"], ["Nh", "Dh"],
             "activation",
             "UnweightedRMSNorm（:786，:815）——按最后维 Dh 归一，无权重",
         )
         self.tensor(
-            "q_rope", "q（部分 RoPE 后）", ["B", "Nh", "T", "Dh"], ["Nh", "Dh", "Rk"],
+            "q_rope", "q（部分 RoPE 后）", ["B", "Nh", "seqlen", "Dh"], ["Nh", "Dh", "Rk"],
             "activation",
             "apply_rotary_pos_emb：尾部 Rk=64 通道旋转（interleaved 配对 cos/sin "
             "repeat_interleave(2)；rotate_half 用 x[..., 0::2]/x[..., 1::2] 交错，"
@@ -810,13 +938,13 @@ class _PhaseBuilder:
 
         # --- RoPE（compress 型，本层共用）---
         self.tensor(
-            "cos_q", "cos（compress）", ["1", "T", "Rk÷2"], ["Rk", "ThetaC", "Yf"], "activation",
+            "cos_q", "cos（compress）", ["1", "seqlen", "Rk÷2"], ["Rk", "ThetaC", "Yf"], "activation",
             "freqs=position_ids[...,None]·inv_freq→cos（modeling:148-153）；"
-            "默认 position_ids [1,T] → cos [1,T,Rk÷2]（与本图 position_ids 一致）；"
+            "默认 position_ids [1,seqlen] → cos [1,seqlen,Rk÷2]（与本图 position_ids 一致）；"
             "attention_scaling=1.0（yarn 时强制）；inv_freq 由 yarn 混合公式计算（theta=θc）",
         )
         self.tensor(
-            "sin_q", "sin（compress）", ["1", "T", "Rk÷2"], ["Rk", "ThetaC", "Yf"], "activation",
+            "sin_q", "sin（compress）", ["1", "seqlen", "Rk÷2"], ["Rk", "ThetaC", "Yf"], "activation",
             "同 cos；interleaved RoPE 每 pair 一个 θ，apply 时 repeat_interleave(2)"
             "并 unsqueeze(1) 广播到头维",
         )
@@ -839,7 +967,7 @@ class _PhaseBuilder:
 
         # --- KV 支路（共享 KV）---
         self.tensor(
-            "kv_proj_out", "kv_norm(kv_proj(hidden))", ["B", "T", "Dh"], ["Dh", "H"],
+            "kv_proj_out", "kv_norm(kv_proj(hidden))", ["B", "seqlen", "Dh"], ["Dh", "H"],
             "activation",
             "单 KV 头投影+归一",
         )
@@ -852,11 +980,11 @@ class _PhaseBuilder:
             "RMSNorm(Dh, eps=EpsN)",
         )
         self.tensor(
-            "kv_head", "kv.view/transpose", ["B", "1", "T", "Dh"], ["Nkv", "Dh"], "activation",
+            "kv_head", "kv.view/transpose", ["B", "1", "seqlen", "Dh"], ["Nkv", "Dh"], "activation",
             "view(B,T,-1,Dh).transpose(1,2)（:818）；1 个 KV 头",
         )
         self.tensor(
-            "kv_rope", "kv（部分 RoPE 后）", ["B", "1", "T", "Dh"], ["Nkv", "Dh", "Rk"],
+            "kv_rope", "kv（部分 RoPE 后）", ["B", "1", "seqlen", "Dh"], ["Nkv", "Dh", "Rk"],
             "activation",
             "K=V 同一张量；RoPE 后写缓存",
         )
@@ -870,7 +998,7 @@ class _PhaseBuilder:
             "kv_head_view", "DeepseekV4Attention", "KV 头视图重排", "view+transpose",
             ["kv_proj_out"], ["kv_head"], [], ["Nkv", "Dh"],
             [src("818", ".view(*hidden_shape).transpose(1, 2)；hidden_shape=(B,T,-1,Dh)")],
-            "view(B,T,1,Dh).transpose(1,2)→[B,1,T,Dh]；1 个 KV 头",
+            "view(B,T,1,Dh).transpose(1,2)→[B,1,seqlen,Dh]；1 个 KV 头",
         )
         self.op(
             "kv_rope_apply", "apply_rotary_pos_emb", "KV 部分 RoPE", "rope-interleaved",
@@ -884,9 +1012,8 @@ class _PhaseBuilder:
             "kv_full", "cache.update 返回 full", ["B", "1", "L_kv", "Dh"], ["Lkv", "Dh", "W"],
             "cache",
             "full=cat(keys, kv_rope)（:198）：本次参与 Attention 的完整 KV 视图，"
-            "L_kv=min(P,W-1)+T；"
-            + ("prefill 首调用 keys 空，full=本调用 T 个新 KV"
-               if prefill else "decode：keys 为 min(P,W-1) 尾部历史 + 本调用 1 个新 KV"),
+            "L_kv=min(kvcachelen,W-1)+seqlen；空缓存起步 keys 为空，full=本调用 seqlen 个新 KV；"
+            "非零历史起步 full=min(kvcachelen,W-1) 尾部历史 + 本调用 seqlen 个新 KV",
         )
         self.op(
             "cache_update", "DeepseekV4CSACache.update", "主 KV 缓存更新（K=V）", "cat+slice",
@@ -894,19 +1021,19 @@ class _PhaseBuilder:
             [src("189-201", "full=cat([keys, kv],dim=-2)；keys=full[:, :, -(W-1):, :]；"
                   "values=keys（K=V 同存储）；返回 full, full"),
              self.srcf("cache_utils.py", "237-274", "DynamicSlidingWindowLayer.update 同族语义")],
-            "读调用前持久态 cache_keys、写调用后持久态 cache_keys_post=min(P+T,W-1) 尾部"
-            "（原地状态更新以调用前/调用后两个张量分别表达）；本次可读 full 与持久保存长度不同；"
-            + ("prefill 起步惰性初始化（keys 为空 tensor）"
-               if prefill else "decode 起步 keys 已含历史尾部"),
+            "读调用前持久态 cache_keys、写调用后持久态 cache_keys_post="
+            "min(kvcachelen+seqlen,W-1) 尾部（原地状态更新以调用前/调用后两个张量分别表达）；"
+            "本次可读 full 与持久保存长度不同；空缓存起步惰性初始化（keys 为空 tensor），"
+            "非零历史起步 keys 已含历史尾部",
         )
 
         # --- CSA 压缩器 ---
         self.tensor(
-            "c_kv", "compressor.kv_proj(hidden)", ["B", "T", "2Dh"], ["Dh", "H"], "activation",
+            "c_kv", "compressor.kv_proj(hidden)", ["B", "seqlen", "2Dh"], ["Dh", "H"], "activation",
             "2·Dh 特征：[..., :Dh]=Ca（供下一窗）、[..., Dh:]=Cb（供本窗）",
         )
         self.tensor(
-            "c_gate", "compressor.gate_proj(hidden)", ["B", "T", "2Dh"], ["Dh", "H"],
+            "c_gate", "compressor.gate_proj(hidden)", ["B", "seqlen", "2Dh"], ["Dh", "H"],
             "activation",
             "与 c_kv 配对的 softmax gate 投影",
         )
@@ -969,9 +1096,9 @@ class _PhaseBuilder:
         )
         self.tensor(
             "c_block_bias", "block_bias（压缩条目可见性）",
-            ["B", "1", "T", "N_comp"], ["M", "Ki"], "mask",
-            "Indexer top-k 集合+因果阈值：查询 t 只可见选中且 w≤(t+1)//M 的条目；"
-            "0 可见/-inf 屏蔽（:692-699）",
+            ["B", "1", "seqlen", "N_comp"], ["M", "Ki"], "mask",
+            "Indexer top-k 集合+因果阈值：查询 t 只可见选中且 w < (t+1)//M 的条目；"
+            "w 等于阈值即屏蔽（含等于）；0 可见/-inf 屏蔽（:574-581/:692-699）",
         )
         self.op(
             "c_kv_gate_proj", "DeepseekV4CSACompressor", "压缩器 KV/gate 投影", "linear×2",
@@ -993,8 +1120,7 @@ class _PhaseBuilder:
                   "buffer=kv[:, usable:]→返回 kv[:, :usable], first_window_position=entry_count·M")],
             "读调用前 buffer/entry_count，写调用后 buffer 余量（<M 条）；"
             "first_window_position=entry_count['compressor']（调用前）·M（闭窗绝对起点）；"
-            + ("prefill 起步 buffer=None"
-               if prefill else "decode 起步 buffer 含上次余量"),
+            "N_win=0 时不闭窗、只写回余量；空缓存起步 buffer=None，非零历史起步 buffer 含上次余量",
         )
         self.op(
             "c_window_view", "DeepseekV4CSACompressor", "窗口视图重排（Ca/Cb 重叠布局）",
@@ -1050,11 +1176,11 @@ class _PhaseBuilder:
         # --- Lightning Indexer ---
         # （块偏置 c_block_bias 在 Indexer top-k 之后构建，与源码 :690→:692-699 顺序一致）
         self.tensor(
-            "i_kv", "indexer.kv_proj(hidden)", ["B", "T", "2Id"], ["Id", "H"], "activation",
+            "i_kv", "indexer.kv_proj(hidden)", ["B", "seqlen", "2Id"], ["Id", "H"], "activation",
             "Indexer 压缩 KV 投影（2·Id 特征 Ca|Cb）",
         )
         self.tensor(
-            "i_gate", "indexer.gate_proj(hidden)", ["B", "T", "2Id"], ["Id", "H"], "activation",
+            "i_gate", "indexer.gate_proj(hidden)", ["B", "seqlen", "2Id"], ["Id", "H"], "activation",
             "Indexer gate 投影",
         )
         self.tensor(
@@ -1096,27 +1222,27 @@ class _PhaseBuilder:
             "kv_norm(Σ softmax(gate)·kv) 后按 i·M+first_window_position RoPE",
         )
         self.tensor(
-            "i_q", "indexer q（RoPE 后）", ["B", "T", "Ih", "Id"], ["Ih", "Id", "Rq"],
+            "i_q", "indexer q（RoPE 后）", ["B", "seqlen", "Ih", "Id"], ["Ih", "Id", "Rq"],
             "activation",
-            "q_b_proj(q_residual).view(B,T,-1,Id).transpose(1,2)→RoPE→transpose 回 [B,T,Ih,Id]"
-            "（:561-562）；scorer 以 [B,T,Ih,Id]×[B,1,Id,Tci] 广播相乘",
+            "q_b_proj(q_residual).view(B,T,-1,Id).transpose(1,2)→RoPE→transpose 回 [B,seqlen,Ih,Id]"
+            "（:561-562）；scorer 以 [B,seqlen,Ih,Id]×[B,1,Id,Tci] 广播相乘",
         )
         self.tensor(
             "i_q_weight", "indexer.q_b_proj.weight", ["Ih×Id", "Rq"], ["Ih", "Id", "Rq"],
             "weight", "Linear(Rq, Ih*Id, bias=False)；输入是 Attention 的 q_residual",
         )
         self.tensor(
-            "i_scores", "indexer scores", ["B", "T", "Tci+N_win_i"], ["Id", "Ih"], "activation",
+            "i_scores", "indexer scores", ["B", "seqlen", "Tci+N_win_i"], ["Id", "Ih"], "activation",
             "scorer：Σ_h w·ReLU(q·K^T)·Id^-0.5（:452-456）；K 用追加后全量条目 "
-            "cache_compressed_i_post（:556-566），分数轴=Tci+N_win_i（含本调用新增，"
-            "prefill 旧 Tci=0 也覆盖新条目）",
+            "cache_compressed_i_post（:556-566），分数轴=Tci+N_win_i（含本调用新增；"
+            "空缓存起步 Tci=0 时也覆盖新条目）",
         )
         self.tensor(
             "i_w_weight", "indexer.scorer.weights_proj.weight", ["Ih", "H"], ["Ih", "H"],
             "weight", "Linear(H, Ih, bias=False)；每查询头权重 w",
         )
         self.tensor(
-            "indexer_topk", "top_k_indices", ["B", "T", "min(Ki,Tci+N_win_i)"], ["Ki", "Id", "M"],
+            "indexer_topk", "top_k_indices", ["B", "seqlen", "min(Ki,Tci+N_win_i)"], ["Ki", "Id", "M"],
             "index",
             "每查询选中的压缩条目索引；实际 top_k=min(Ki, 本调用更新后 Indexer 条目数"
             " Tci+N_win_i)（:566）；无效位 -1 哨兵（future_mask -inf→topk→where，"
@@ -1188,7 +1314,7 @@ class _PhaseBuilder:
             [src("443-456", "scores=matmul(q.float(), compressed_kv.T.float().unsqueeze(1))；"
                   "relu·Id^-0.5；weights=weights_proj(hidden)·Ih^-0.5；"
                   "(scores*w.unsqueeze(-1)).sum(dim=2)")],
-            "fp32 打分；输出 [B,T,Tci+N_win_i]",
+            "fp32 打分；输出 [B,seqlen,Tci+N_win_i]",
         )
         self.op(
             "i_topk", "DeepseekV4Indexer", "Indexer top-k 选择", "mask+topk+where",
@@ -1197,7 +1323,8 @@ class _PhaseBuilder:
             [src("565-583", "top_k=min(Ki, compressed_len)；future_mask=entry_indices>="
                   "(position_ids+1)//M；masked_fill(-inf)→topk→invalid→-1 哨兵")],
             "compressed_len=本调用更新后条目数（cache_compressed_i_post 轴长）；"
-            "查询 t 不见因果阈值之后的条目；选不中的置 -1 由块偏置处理",
+            "查询 t 只可见条目 w < (t+1)//M，w ≥ (t+1)//M（含等于阈值）被 future_mask 屏蔽；"
+            "选不中的置 -1 由块偏置处理",
         )
 
         # --- 压缩条目块偏置（Indexer 之后，源码 :690→:692-699 顺序）---
@@ -1226,12 +1353,12 @@ class _PhaseBuilder:
         )
         self.tensor(
             "mask_ext", "attention_mask（扩展后）",
-            ["B", "1", "T", "L_mask+N_comp"], ["Lmask", "M", "W"], "mask",
+            ["B", "1", "seqlen", "L_mask+N_comp"], ["Lmask", "M", "W"], "mask",
             "模型级滑动因果 mask（sliding 层尺寸）cat block_bias（:837-841）；"
             "0 可见/-inf 屏蔽；eager float mask",
         )
         self.tensor(
-            "mask_model", "模型级 4D float mask", ["B", "1", "T", "L_mask"], ["Lmask", "W"],
+            "mask_model", "模型级 4D float mask", ["B", "1", "seqlen", "L_mask"], ["Lmask", "W"],
             "mask",
             "create_sliding_window_causal_mask：sliding_window_causal 函数（kv_idx>q_idx-W"
             " 且 kv_idx≤q_idx）+可选 padding；eager_mask 生成 0/-inf float；"
@@ -1265,7 +1392,7 @@ class _PhaseBuilder:
             "n_rep=Nh/1=Nh",
         )
         self.tensor(
-            "qk_logits", "attn_weights（QK^T·scale）", ["B", "Nh", "T", "L_kv+N_comp"],
+            "qk_logits", "attn_weights（QK^T·scale）", ["B", "Nh", "seqlen", "L_kv+N_comp"],
             ["Nh", "Lkv", "Dh", "M"], "activation",
             "matmul(q, k^T)·Dh^-0.5（:726 scaling=head_dim^-0.5）",
         )
@@ -1274,28 +1401,28 @@ class _PhaseBuilder:
             "每头可学习注意力 sink（gpt-oss 风格；:793 nn.Parameter(Nh)）",
         )
         self.tensor(
-            "combined_logits", "cat(attn_weights, sinks)", ["B", "Nh", "T", "L_kv+N_comp+1"],
+            "combined_logits", "cat(attn_weights, sinks)", ["B", "Nh", "seqlen", "L_kv+N_comp+1"],
             ["Nh", "Lkv", "Dh", "M"], "activation",
             "sink 拼接在 KV 轴尾（:730-731）；KV 轴长 L_kv+N_comp（概率序列轴）+1（sink）",
         )
         self.tensor(
-            "probs", "softmax 后概率", ["B", "Nh", "T", "L_kv+N_comp+1"], ["Nh", "Lkv", "Dh", "M"],
+            "probs", "softmax 后概率", ["B", "Nh", "seqlen", "L_kv+N_comp+1"], ["Nh", "Lkv", "Dh", "M"],
             "activation",
             "combined-max 减最大值（防 bf16 溢出，:736）→softmax(dim=-1)（:737）",
         )
         self.tensor(
-            "attn_probs", "scores（去 sink）", ["B", "Nh", "T", "L_kv+N_comp"],
+            "attn_probs", "scores（去 sink）", ["B", "Nh", "seqlen", "L_kv+N_comp"],
             ["Nh", "Lkv", "Dh", "M"], "activation",
             "probs[..., :-1]（:738）——概率序列轴=L_kv+N_comp，与 AV 的 KV 轴闭合；"
             "dropout p=0（推理）",
         )
         self.tensor(
-            "attn_head_out", "attn_output（头维）", ["B", "T", "Nh", "Dh"], ["Nh", "Dh"],
-            "activation", "matmul(attn_probs, v)→[B,Nh,T,Dh]→transpose(1,2).contiguous()"
-            "→[B,T,Nh,Dh]（:740-741）",
+            "attn_head_out", "attn_output（头维）", ["B", "seqlen", "Nh", "Dh"], ["Nh", "Dh"],
+            "activation", "matmul(attn_probs, v)→[B,Nh,seqlen,Dh]→transpose(1,2).contiguous()"
+            "→[B,seqlen,Nh,Dh]（:740-741）",
         )
         self.tensor(
-            "qk_masked", "attn_weights（+mask 后）", ["B", "Nh", "T", "L_kv+N_comp"],
+            "qk_masked", "attn_weights（+mask 后）", ["B", "Nh", "seqlen", "L_kv+N_comp"],
             ["Nh", "Lkv", "Dh", "M"], "activation",
             "attn_weights + attention_mask（:727-728，加法型 mask 生成新张量）",
         )
@@ -1333,19 +1460,19 @@ class _PhaseBuilder:
             [src("740-741", "attn_output=matmul(attn_weights, value_states)；"
                   "transpose(1,2).contiguous()")],
             "概率输入是去 sink 后的 attn_probs（L_kv+N_comp 轴与 V 的 KV 轴闭合）；"
-            "V 与 K 同一张量（K=V 共享 KV）；输出经 transpose(1,2) 为 [B,T,Nh,Dh]",
+            "V 与 K 同一张量（K=V 共享 KV）；输出经 transpose(1,2) 为 [B,seqlen,Nh,Dh]",
         )
 
         # --- 逆 RoPE 与分组输出投影 ---
         self.tensor(
-            "attn_rope_inv", "attn_output（逆 RoPE 后）", ["B", "T", "Nh", "Dh"], ["Nh", "Dh", "Rk"],
+            "attn_rope_inv", "attn_output（逆 RoPE 后）", ["B", "seqlen", "Nh", "Dh"], ["Nh", "Dh", "Rk"],
             "activation",
             "conjugate 旋转（-sin）抵消 V 上的 RoPE（:859-865）；transpose 配对为 layout "
             "修正——apply 期望 [B,S,H,D]，attention 输出转置进去、旋转后转置回来，"
-            "前后都是 [B,T,Nh,Dh]",
+            "前后都是 [B,seqlen,Nh,Dh]",
         )
         self.tensor(
-            "attn_grouped", "attn_output.reshape(B,T,G,-1)", ["B", "T", "G", "Nh×Dh÷G"],
+            "attn_grouped", "attn_output.reshape(B,T,G,-1)", ["B", "seqlen", "G", "Nh×Dh÷G"],
             ["Nh", "Dh", "G"], "activation",
             "每组 Nh/G=8 头、Dh=512 → 组内 4096 维（:867 reshape）",
         )
@@ -1356,7 +1483,7 @@ class _PhaseBuilder:
             "weight.view(G,-1,Dh_g).transpose(1,2) 分组 bmm（:323-329）",
         )
         self.tensor(
-            "o_a_out", "o_a_proj 输出", ["B", "T", "G×Ro"], ["G", "Ro"], "activation",
+            "o_a_out", "o_a_proj 输出", ["B", "seqlen", "G×Ro"], ["G", "Ro"], "activation",
             "flatten(2) 后接 o_b_proj（:868）",
         )
         self.tensor(
@@ -1364,7 +1491,7 @@ class _PhaseBuilder:
             "Linear(G*Ro, H, bias=False)",
         )
         self.tensor(
-            "attn_block_output", "Attention 输出（o_b_proj）", ["B", "T", "H"], ["H"],
+            "attn_block_output", "Attention 输出（o_b_proj）", ["B", "seqlen", "H"], ["H"],
             "activation",
             "o_b_proj 输出（:869），即残差段的 attn_output（进入 attn 段 mHC 混合）",
         )
@@ -1380,7 +1507,7 @@ class _PhaseBuilder:
             "attn_group_reshape", "DeepseekV4Attention", "分组 reshape", "reshape",
             ["attn_rope_inv"], ["attn_grouped"], [], ["Nh", "Dh", "G"],
             [src("867", "grouped = attn_output.reshape(*input_shape, o_groups, -1)")],
-            "[B,T,Nh,Dh]→[B,T,G,Nh·Dh/G]；G=o_groups",
+            "[B,seqlen,Nh,Dh]→[B,seqlen,G,Nh·Dh/G]；G=o_groups",
         )
         self.op(
             "o_a_proj", "DeepseekV4GroupedLinear", "分组输出下投影", "reshape+bmm",
@@ -1409,7 +1536,7 @@ class _PhaseBuilder:
             comb_tid = "attn_mhc_comb"
             self.tensor(
                 "attn_out_streams", "hidden_states（attn 段混合输出）",
-                ["B", "T", "Nhc", "H"], ["Nhc", "H"], "activation",
+                ["B", "seqlen", "Nhc", "H"], ["Nhc", "H"], "activation",
                 "post 扩展 + comb.T 混合后的流，即 ffn_hc 的输入",
             )
         else:
@@ -1420,16 +1547,16 @@ class _PhaseBuilder:
             comb_tid = "ffn_mhc_comb"
         self.tensor(
             f"{p}_expanded", "post.unsqueeze(-1)·output.unsqueeze(-2)",
-            ["B", "T", "Nhc", "H"], ["Nhc", "H"], "activation",
+            ["B", "seqlen", "Nhc", "H"], ["Nhc", "H"], "activation",
             "块输出按 post 加权的流扩展",
         )
         self.tensor(
-            f"{p}_combT", "comb.transpose(-1,-2)", ["B", "T", "Nhc", "Nhc"], ["Nhc"],
+            f"{p}_combT", "comb.transpose(-1,-2)", ["B", "seqlen", "Nhc", "Nhc"], ["Nhc"],
             "activation",
-            "comb 显式转置结果（rank 与 comb 相同 [B,T,Nhc,Nhc]），供残差 matmul 消费",
+            "comb 显式转置结果（rank 与 comb 相同 [B,seqlen,Nhc,Nhc]），供残差 matmul 消费",
         )
         self.tensor(
-            f"{p}_mixed", "comb.T @ residual", ["B", "T", "Nhc", "H"], ["Nhc", "H"],
+            f"{p}_mixed", "comb.T @ residual", ["B", "seqlen", "Nhc", "H"], ["Nhc", "H"],
             "activation",
             "matmul(combᵀ, residual_streams)（:1178/:1184）；"
             "sum_j comb[j,k]·residual[j,d]——对第一个流轴求和；"
@@ -1469,10 +1596,9 @@ class _PhaseBuilder:
         src = self.src
         srcf = self.srcf
         v = self.values
-        prefill = self.is_prefill
 
         self.tensor(
-            "ffn_flat", "flat=hidden.view(-1, H)", ["B×T", "H"], ["H"], "activation",
+            "ffn_flat", "flat=hidden.view(-1, H)", ["B×seqlen", "H"], ["H"], "activation",
             "SparseMoeBlock.forward view（:1128）；专家模板/路由的 token 输入源",
         )
         self.op(
@@ -1480,47 +1606,15 @@ class _PhaseBuilder:
             ["ffn_normed"], ["ffn_flat"], [], ["H"],
             [src("1125-1128", "residual=hidden_states；batch, seq_len, hidden_dim=shape；"
                   "flat=hidden_states.view(-1, hidden_dim)")],
-            "residual 同一张量供共享专家（:1127/:1134）；展开为 token 行 [B×T, H]",
+            "residual 同一张量供共享专家（:1127/:1134）；展开为 token 行 [B×seqlen, H]",
         )
+        if getattr(self, "mlp_type", "moe") == "hash_moe":
+            self._moe_router_hash()
+        else:
+            self._moe_router_topk()
+
         self.tensor(
-            "router_weight", "router.weight", ["E", "H"], ["E", "H"], "weight",
-            "TopKRouter.weight（E×H，:1071）",
-        )
-        self.tensor(
-            "router_bias", "e_score_correction_bias", ["E"], ["E"], "weight",
-            "TopKRouter.e_score_correction_bias（buffer，init zeros；:1074）——只参与选择，"
-            "不参与权重值（gather 自 scores）",
-        )
-        self.tensor(
-            "router_logits", "logits", ["B×T", "E"], ["E", "H"], "activation",
-            "F.linear(flat, weight)（:1078）",
-        )
-        self.tensor(
-            "router_scores", "scores（sqrtsoftplus）", ["B×T", "E"], ["E"], "activation",
-            "score_fn(logits)=sqrt(softplus(logits))（activations.py:217-221）",
-        )
-        self.tensor(
-            "topk_indices", "indices", ["B×T", "K"], ["K", "E"], "index",
-            "topk(scores+bias, K, sorted=False).indices（:1080）",
-        )
-        self.tensor(
-            "topk_weights", "weights×Scl", ["B×T", "K"], ["K", "E", "Scl"], "activation",
-            "scores.gather(indices)→/(sum+1e-20)（:1081-1082）→×routed_scaling_factor"
-            "（:1083）；归一无视 bias（gather 自原 scores）",
-        )
-        self.op(
-            "moe_router", "DeepseekV4TopKRouter", "TopK 路由打分与选择",
-            "linear+softplus+sqrt+topk+gather+norm",
-            ["ffn_flat", "router_bias"], ["router_logits", "topk_indices", "topk_weights"],
-            ["router_weight"], ["E", "K", "Scl", "H"],
-            [src("1065-1083", "flat→linear→score_fn→topk(scores+bias)→gather→"
-                 "归一+1e-20→×routed_scaling_factor"),
-             srcf("activations.py", "217-221", "SqrtSoftplusActivation=sqrt(softplus(x))")],
-            "scoring_func='sqrtsoftplus'；e_score_correction_bias 参与选择不参与权重；"
-            "命中专家集合运行时决定（保留符号）",
-        )
-        self.tensor(
-            "expert_mask", "one_hot mask", ["E+1", "K", "B×T"], ["E", "K"], "index",
+            "expert_mask", "one_hot mask", ["E+1", "K", "B×seqlen"], ["E", "K"], "index",
             "F.one_hot(top_k_index, E+1).permute(2,1,0)（:1043）；+1 维为哨兵位",
         )
         self.tensor(
@@ -1535,7 +1629,7 @@ class _PhaseBuilder:
         )
         self.tensor(
             "expert_token_idx", "token_idx", ["N_e"], ["K"], "index",
-            "where(mask[expert_idx])[1]（:1049）——选中 token 在 flat [B×T] 的行索引；"
+            "where(mask[expert_idx])[1]（:1049）——选中 token 在 flat [B×seqlen] 的行索引；"
             "供 index_add 汇合寻址",
         )
         self.tensor(
@@ -1579,12 +1673,12 @@ class _PhaseBuilder:
             "路由权重在真实位置（top_k_pos 寻址）相乘",
         )
         self.tensor(
-            "routed_out", "routed（加权汇合，flat）", ["B×T", "H"], ["H"], "activation",
+            "routed_out", "routed（加权汇合，flat）", ["B×seqlen", "H"], ["H"], "activation",
             "final=zeros_like(flat)（:1041）起步零张量，index_add_(0, token_idx, current)"
             "（:1052）；仍为 flat 行视图",
         )
         self.tensor(
-            "routed_view", "routed.view(B,T,H)", ["B", "T", "H"], ["H"], "activation",
+            "routed_view", "routed.view(B,T,H)", ["B", "seqlen", "H"], ["H"], "activation",
             "experts 输出还原 3D 视图（:1133），与 shared_out 同形后相加（:1134）",
         )
         self.op(
@@ -1673,16 +1767,16 @@ class _PhaseBuilder:
             "moe_routed_view", "DeepseekV4SparseMoeBlock", "routed 还原 3D 视图", "view",
             ["routed_out"], ["routed_view"], [], ["H"],
             [src("1133", "routed = self.experts(flat, indices, weights).view(batch, seq_len, hidden_dim)")],
-            "[B×T,H]→[B,T,H]；与 shared_out 同形后相加",
+            "[B×seqlen,H]→[B,seqlen,H]；与 shared_out 同形后相加",
         )
         # 共享专家（DeepseekV4MLP）
         self.tensor(
-            "shared_gate", "shared.gate_proj(x).clamp(max=Lim)", ["B", "T", "Es"],
+            "shared_gate", "shared.gate_proj(x).clamp(max=Lim)", ["B", "seqlen", "Es"],
             ["Es", "Lim", "H"], "activation",
             "gate 投影+clamp（:1019）",
         )
         self.tensor(
-            "shared_up", "shared.up_proj(x).clamp(±Lim)", ["B", "T", "Es"], ["Es", "Lim", "H"],
+            "shared_up", "shared.up_proj(x).clamp(±Lim)", ["B", "seqlen", "Es"], ["Es", "Lim", "H"],
             "activation", "up 投影+clamp（:1020）",
         )
         self.tensor(
@@ -1698,15 +1792,15 @@ class _PhaseBuilder:
             "weight", "Linear(Es, H)",
         )
         self.tensor(
-            "shared_act", "SiLU(gate)·up", ["B", "T", "Es"], ["Es", "Lim"], "activation",
+            "shared_act", "SiLU(gate)·up", ["B", "seqlen", "Es"], ["Es", "Lim"], "activation",
             "act_fn(gate)·up（:1021）",
         )
         self.tensor(
-            "shared_out", "shared down 输出", ["B", "T", "H"], ["H", "Es"], "activation",
+            "shared_out", "shared down 输出", ["B", "seqlen", "H"], ["H", "Es"], "activation",
             "down_proj(act·up)（:1021）",
         )
         self.tensor(
-            "mlp_output", "MoE 输出（routed+shared）", ["B", "T", "H"], ["H"], "activation",
+            "mlp_output", "MoE 输出（routed+shared）", ["B", "seqlen", "H"], ["H"], "activation",
             "routed + shared_experts(residual)（:1134）；进入 ffn 残差段",
         )
         self.op(
@@ -1736,46 +1830,108 @@ class _PhaseBuilder:
     # 阶段注记
     # ------------------------------------------------------------------
 
+    def _moe_router_topk(self) -> None:
+        src = self.src
+        srcf = self.srcf
+        v = self.values
+        self.tensor(
+            "router_weight", "router.weight", ["E", "H"], ["E", "H"], "weight",
+            "TopKRouter.weight（E×H，:1071）",
+        )
+        self.tensor(
+            "router_bias", "e_score_correction_bias", ["E"], ["E"], "weight",
+            "TopKRouter.e_score_correction_bias（buffer，init zeros；:1074）——只参与选择，"
+            "不参与权重值（gather 自 scores）",
+        )
+        self.tensor(
+            "router_logits", "logits", ["B×seqlen", "E"], ["E", "H"], "activation",
+            "F.linear(flat, weight)（:1078）",
+        )
+        self.tensor(
+            "router_scores", "scores（sqrtsoftplus）", ["B×seqlen", "E"], ["E"], "activation",
+            "score_fn(logits)=sqrt(softplus(logits))（activations.py:217-221）",
+        )
+        self.tensor(
+            "topk_indices", "indices", ["B×seqlen", "K"], ["K", "E"], "index",
+            "topk(scores+bias, K, sorted=False).indices（:1080）",
+        )
+        self.tensor(
+            "topk_weights", "weights×Scl", ["B×seqlen", "K"], ["K", "E", "Scl"], "activation",
+            "scores.gather(indices)→/(sum+1e-20)（:1081-1082）→×routed_scaling_factor"
+            "（:1083）；归一无视 bias（gather 自原 scores）",
+        )
+        self.op(
+            "moe_router", "DeepseekV4TopKRouter", "TopK 路由打分与选择",
+            "linear+softplus+sqrt+topk+gather+norm",
+            ["ffn_flat", "router_bias"], ["router_logits", "topk_indices", "topk_weights"],
+            ["router_weight"], ["E", "K", "Scl", "H"],
+            [src("1065-1083", "flat→linear→score_fn→topk(scores+bias)→gather→"
+                 "归一+1e-20→×routed_scaling_factor"),
+             srcf("activations.py", "217-221", "SqrtSoftplusActivation=sqrt(softplus(x))")],
+            "scoring_func='sqrtsoftplus'；e_score_correction_bias 参与选择不参与权重；"
+            "命中专家集合运行时决定（保留符号）",
+        )
+
+    def _moe_router_hash(self) -> None:
+        """HashRouter（modeling:1086-1134）：input_ids→tid2eid 查表选择专家；
+        learned gate 仍生成全部 scores，按查表 indices gather；无 TopK/bias。"""
+        src = self.src
+        self.tensor("tid2eid", "tid2eid（持久 buffer）", ["Vocab", "K"], ["Vocab", "K"],
+                    "cache", "HashRouter.tid2eid[vocab_size, num_experts_per_tok]；"
+                    "persistent_buffer=True，非可训练 gate 权重；内容不猜")
+        self.tensor("topk_indices", "indices（tid2eid[input_ids]）", ["B×seqlen", "K"], ["K"],
+                    "index", "indices=self.tid2eid[input_ids.reshape(-1)].long()（:1104）")
+        self.op("moe_hash_lookup", "DeepseekV4HashRouter", "Hash 查表选择专家", "gather_table",
+                ["input_ids", "tid2eid"], ["topk_indices"], ["tid2eid"], ["Vocab", "K"],
+                [src("1086-1134", "indices = self.tid2eid[input_ids.reshape(-1)].long()")],
+                "input_ids [B,seqlen] 是真实边界；indices 由持久表查得，不是分数 TopK")
+        self.tensor("router_weight", "router.weight", ["E", "H"], ["E", "H"], "weight",
+                    "HashRouter.learned gate weight（:1095）")
+        self.tensor("router_logits", "logits（learned gate）", ["B×seqlen", "E"], ["E", "H"],
+                    "activation", "F.linear(flat, weight)（:1098）")
+        self.tensor("router_scores", "scores（sqrtsoftplus）", ["B×seqlen", "E"], ["E"], "activation",
+                    "sqrt(softplus(logits))；仍生成全部 scores")
+        self.tensor("topk_weights", "weights×Scl", ["B×seqlen", "K"], ["K", "Scl"], "activation",
+                    "scores.gather(hash indices)→/(sum+1e-20)→×routed_scaling_factor")
+        self.op("moe_router", "DeepseekV4HashRouter", "Hash 路由权重 gather",
+                "linear+softplus+sqrt+gather+norm",
+                ["ffn_flat", "topk_indices"], ["router_logits", "router_scores", "topk_weights"],
+                ["router_weight"], ["E", "K", "Scl", "H"],
+                [src("1086-1134", "learned scores + tid2eid indices gather→归一→×Scl")],
+                "无 TopK 分数选择、无 e_score_correction_bias；indices 来自 tid2eid 查表")
+
     def _build_cache_notes(self) -> None:
-        prefill = self.is_prefill
-        if prefill:
-            self.cache_notes = [
-                "prefill 缓存起步为空：DynamicCache(config) 按层型分发建层（cache_utils.py:1808-1896），"
-                "CSA 层为 DeepseekV4CSACache（modeling:247-297）；update 首调用惰性初始化，keys 为 0 长度 tensor。",
-                "主 KV：update 返回 full=cat(keys, kv_new)（modeling:198）——prefill full=T 个新 KV；"
-                "持久保存的是 full 的最后 W-1=127 个位置（:199），本次可读与持久长度不同。",
-                "压缩器窗口缓冲 buffer_kv/buffer_gate['compressor']：起步 None；本调用取 M 对齐前缀闭窗，"
-                "余量（T%M 个）留作下调用 buffer（:216-224）。",
-                "压缩条目 compressed_kv['compressor']：起步 None；本调用新增 N_win=T//M 条"
-                "（T≥M 时），entry_count 由 0 增至 N_win（:226-237）。",
-                "CSA overlap：首调用 overlap_kv/gate=None→new_kv 窗 0 前半为零值/-inf gate"
-                "（softmax 权重 0，:647-666 注释）；调用后持久化最后满窗 Ca 尾（:278-292）。",
-                "Indexer 系列同构：'indexer' 键独立 buffer/compressed/entry_count/overlap（:268-276）。",
-                "position_ids=arange(T)+P（modeling:1335-1337；prefill P=0）；"
-                "mask 尺寸 get_mask_sizes(T)（cache_utils:276-286）。",
-            ]
-        else:
-            self.cache_notes = [
-                "decode 缓存起步已含历史：keys 为最近 min(P, W-1) 个位置尾部（历史足够长时即 W-1=127）、"
-                "cumulative_length=P、entry_count=N_hist、buffer 为上次余量、overlap 为上次满窗 Ca 尾——"
-                "全部为调用历史的结构前提，内容有效性由历史调用保证，本图不验证数值。",
-                "主 KV：full=cat(keys 尾部, 新 kv)（modeling:198）——decode L_kv=min(P,W-1)+1"
-                "（P≥W-1 时即 W 个位置视图）；持久 keys_post=min(P+1, W-1) 个位置"
-                "（含新 token，最老一个滑出）。",
-                "压缩器窗口缓冲：历史余量 buffer（<M 条）+本调用 1 token；仅当合计达 M 条才闭窗"
-                "（N_win = floor((buffer_len+1)/M)，即 (P+1)%M==0 对齐触发时），否则只更新 buffer。",
-                "压缩条目：N_comp=entry_count 调用后值；本调用最多新增 1 条（数据相关）；"
-                "Attention 读到的条目全量随 update_compressor_states 返回（:556-558/:681-683）。",
-                "CSA overlap：调用前 overlap 为上次满窗 Ca 尾；闭窗时先读后写"
-                "（update_overlap_state 返回 prior 再持久本调用，:278-292；前后状态分离表达）。",
-                "Indexer 系列同构：'indexer' 键独立 buffer/compressed/entry_count/overlap"
-                "（:268-276），N_win_i 与压缩器 N_win 因历史余量不同而独立。",
-                "position_ids=P（单 token，modeling:1335-1337）；"
-                "mask get_mask_sizes(1)：is_full（P≥W）时 kv_length=W-1+1=W、"
-                "kv_offset=P-W+1（cache_utils:276-286）。",
-                "future_threshold：decode 查询 t=P 的因果阈值 (P+1)//M 决定可见压缩条目上界"
-                "（modeling:432-439/:574-581）。",
-            ]
+        """缓存前提/读写/持久区别（一份结构；具体取值由场景绑定求值）。"""
+        self.cache_notes = [
+            "缓存起步状态由场景决定：空缓存 Prefill（kvcachelen=0）起步为惰性初始化"
+            "（keys 为 0 长度 tensor、entry_count=0、buffer=None、overlap=None）；"
+            "非零历史 Decode 起步为 keys 最近 min(kvcachelen, W-1) 个位置尾部、"
+            "cumulative_length=kvcachelen、entry_count=kvcachelen//M、buffer 为上次余量、"
+            "overlap 为上次满窗 Ca 尾。全部为调用历史的结构前提，内容有效性由历史调用保证，"
+            "本图不验证数值（cache_utils.py:1808-1896 按层型分发建层；CSA 层 DeepseekV4CSACache，"
+            "modeling:247-297）。",
+            "主 KV：update 返回 full=cat(keys, kv_new)（modeling:198）——full 长度"
+            " L_kv=min(kvcachelen,W-1)+seqlen；持久保存的是 full 的最后 W-1 个位置"
+            "（min(kvcachelen+seqlen, W-1)，:199），本次可读与持久长度不同；"
+            "kvcachelen 是逻辑历史总数，不等于物理保留长度，也不是缓存字节数。",
+            "压缩器窗口缓冲 buffer_kv/buffer_gate：调用前余量 Tbuf；本调用合并后取 M 对齐前缀闭窗，"
+            "余量 (Tbuf+seqlen)%M 留作下调用 buffer（:216-224）。闭窗数 "
+            "N_win=(Tbuf+seqlen)//M；N_win=0 时只写回 buffer，不更新 overlap/压缩条目。",
+            "压缩条目 compressed_kv：调用后 N_comp=kvcachelen//M+N_win 条；"
+            "entry_count 同步累加（:226-237）。",
+            "CSA overlap：闭窗时先读调用前 overlap（窗 0 前半；空缓存首闭窗为零值/-inf gate，"
+            "softmax 权重 0，:647-666 注释）再持久本调用最后满窗 Ca 尾（:278-292）；"
+            "N_win=0 时不读不写，保留调用前状态（前后状态分离表达）。",
+            "Indexer 系列同构：'indexer' 键独立 buffer/compressed/entry_count/overlap（:268-276）；"
+            "连续正常执行下 N_win_i 与 N_win 同值，任意快照下可不同。",
+            "position_ids=arange(seqlen)+kvcachelen（modeling:1335-1337）；"
+            "mask 尺寸 get_mask_sizes(seqlen)（cache_utils:276-286）："
+            "is_full=(kvcachelen≥W) 时 kv_length=W-1+seqlen，否则 kvcachelen+seqlen，"
+            "等价于 min(kvcachelen, W-1)+seqlen。",
+            "future_threshold：查询 t 可见条目满足 w < (t+1)//M，w ≥ (t+1)//M（含等于阈值）"
+            "被屏蔽（modeling:574-581）；末查询 t=kvcachelen+seqlen-1 的阈值为 "
+            "(kvcachelen+seqlen)//M。单 token Decode 只是 seqlen=1 的场景实例。",
+        ]
 
     def _build_coverage_notes(self) -> None:
         common = [
@@ -1797,15 +1953,9 @@ class _PhaseBuilder:
             "数据相关量（N_win/N_comp/N_kv/L_mask/命中专家数/每专家 token 数）保留符号与派生式，"
             "不填运行时假设值。",
         ]
-        if self.is_prefill:
-            self.coverage_notes = [
-                "prefill 阶段覆盖：T 个新 token、空缓存起步的完整 Decoder 路径"
-                "（mHC→norm→Attention（含压缩器/Indexer/缓存）→残差→mHC→norm→MoE→残差）。",
-                *common,
-            ]
-        else:
-            self.coverage_notes = [
-                "decode 阶段覆盖：T=1、历史缓存前提的完整 Decoder 路径（与 prefill 同构模板；"
-                "差异在缓存起步状态、窗口触发条件、mask 尺寸与因果阈值）。",
-                *common,
-            ]
+        self.coverage_notes = [
+            "覆盖：单个 Decoder Block 的完整路径（mHC→norm→Attention（含压缩器/Indexer/缓存）→"
+            "残差→mHC→norm→MoE→残差）；同一份结构由 seqlen/kvcachelen 场景参数化，"
+            "Prefill/Decode 不再各建一份结构。",
+            *common,
+        ]

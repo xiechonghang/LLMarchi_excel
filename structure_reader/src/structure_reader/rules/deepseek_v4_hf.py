@@ -40,8 +40,10 @@ __all__ = [
     "SOURCE_FILES",
     "LAYER_TYPE_BY_RATIO",
     "ANALYZED_SOURCE_FINGERPRINTS",
+    "LAYER_GROUP_SPECS",
     "verify_source_fingerprints",
     "load_hf_model_values",
+    "layer_group_assignments",
     "effective_parameter_records",
     "effective_layer_types",
 ]
@@ -659,3 +661,87 @@ def effective_parameter_records(values: HfModelValues) -> list[dict]:
         },
     ]
     return records
+
+
+# ---------------------------------------------------------------------------
+# 四类真实层组（层型 × MLP 类型）：归属、代表层与覆盖校验的单一事实来源
+# ---------------------------------------------------------------------------
+
+# 组 id/标签/层型组合/代表层。代表层只是层内结构的代表样板，不表示该组只有一
+# 层；真实层集合由 layer_types/mlp_layer_types 逐层推导（见 layer_group_assignments）。
+LAYER_GROUP_SPECS = (
+    {
+        "id": "swa-hash",
+        "label": "SWA + Hash MoE",
+        "attention_type": "sliding_attention",
+        "moe_type": "hash_moe",
+        "representative_layer_index": 0,
+    },
+    {
+        "id": "csa-hash",
+        "label": "CSA + Hash MoE",
+        "attention_type": "compressed_sparse_attention",
+        "moe_type": "hash_moe",
+        "representative_layer_index": 2,
+    },
+    {
+        "id": "hca-topk",
+        "label": "HCA + TopK MoE",
+        "attention_type": "heavily_compressed_attention",
+        "moe_type": "moe",
+        "representative_layer_index": 3,
+    },
+    {
+        "id": "csa-topk",
+        "label": "CSA + TopK MoE",
+        "attention_type": "compressed_sparse_attention",
+        "moe_type": "moe",
+        "representative_layer_index": 4,
+    },
+)
+
+
+def layer_group_assignments(values: HfModelValues) -> list[dict]:
+    """按真实 layer_types/mlp_layer_types 推导四组层归属（保持 LAYER_GROUP_SPECS 顺序）。
+
+    返回 [{id,label,attention_type,moe_type,representative_layer_index,
+    layer_indices,count}]。任何未归属层型组合、空组、代表层不在组内或四组未恰好
+    覆盖全部主干层，均具名拒绝（ValueError）——四组模板不能被当作“任意层都可套”。
+    """
+    by_type: dict[tuple[str, str], list[int]] = {}
+    for index in range(values.num_hidden_layers):
+        by_type.setdefault(
+            (values.layer_type(index), values.mlp_layer_type(index)), []
+        ).append(index)
+    groups: list[dict] = []
+    covered: list[int] = []
+    for spec in LAYER_GROUP_SPECS:
+        layer_indices = by_type.pop(
+            (spec["attention_type"], spec["moe_type"]), []
+        )
+        if not layer_indices:
+            raise ValueError(
+                f"层组 {spec['id']} 在配置中没有真实层"
+                f"（{spec['attention_type']}+{spec['moe_type']}）"
+            )
+        representative = spec["representative_layer_index"]
+        if representative not in layer_indices:
+            raise ValueError(
+                f"层组 {spec['id']} 代表层 {representative} 不属于真实层集合 {layer_indices}"
+            )
+        groups.append({
+            **spec,
+            "layer_indices": layer_indices,
+            "count": len(layer_indices),
+        })
+        covered.extend(layer_indices)
+    if by_type:
+        leftover = {f"{attn}+{mlp}": idx for (attn, mlp), idx in by_type.items()}
+        raise ValueError(f"存在未归属到任何已知层组的层型组合: {leftover}")
+    expected = list(range(values.num_hidden_layers))
+    if sorted(covered) != expected or len(covered) != len(set(covered)):
+        raise ValueError(
+            f"四组层集合未恰好覆盖 {values.num_hidden_layers} 层: 实得 {len(covered)} 项"
+            f"（去重 {len(set(covered))}）"
+        )
+    return groups

@@ -1,0 +1,10 @@
+{
+  "task": "T02",
+  "state": "dispatched",
+  "baseline_dir": "/var/folders/cf/v8s2g_0n0_5c9x9brbcy1nw00000gn/T/llmarchi-T02-baseline-20261028-qned8nmo",
+  "baseline_manifest": "/var/folders/cf/v8s2g_0n0_5c9x9brbcy1nw00000gn/T/llmarchi-T02-baseline-20261028-qned8nmo/manifest.json",
+  "baseline_head": "947ae78f120279403ec0a4c539e99d3d8869e1d6",
+  "previous_task_rechecked": "T01 accepted product SHA and reports unchanged",
+  "prepared_at": "2026-10-28T15:19:22.263676+08:00",
+  "dispatched_at": "2026-10-28T15:21:35.298191+08:00"
+}

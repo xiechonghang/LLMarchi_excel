@@ -28,7 +28,12 @@ class Ctx:
         self.config = config
         self.rope_main = rope_main
         self.rope_compress = rope_compress
-        self.rope = rope_compress
+        self.rope = (rope_main if doc.get("scope", {}).get("attention_type") == "sliding_attention"
+                     else rope_compress)
+        self.kv_weight_tid = ("kv_weight_attn"
+                              if doc.get("scope", {}).get("attention_type") in (
+                                  "sliding_attention", "heavily_compressed_attention")
+                              else "kv_weight")
         self.ops = {o["id"]: o for o in phase["operators"]}
         self.tensors = {t["id"]: t for t in phase["tensors"]}
         self.params = {p["id"]: p for p in phase["parameters"]}
@@ -55,6 +60,11 @@ class Ctx:
 
     def out_t(self, g: GB, tid: str, role="activation", name: str | None = None,
               shape=None, dtype: str = DTYPE) -> str:
+        if role == "activation":
+            if tid == "kv_full":
+                role = "cache_view"
+            elif tid.startswith("cache_") and tid.endswith("_post"):
+                role = "cache_post"
         return g.out(name or tid, self.sh(tid) if shape is None else shape, dtype, role,
                      json_id=tid)
 
@@ -89,8 +99,13 @@ def build_attn_q(ctx: Ctx) -> GB:
     qn = rmsnorm(g, "q_b_norm", qhead, "q_normed", ctx.p("EpsN"))
     g.set_group_label("q_b_norm", "DeepseekV4UnweightedRMSNorm（无 weight）")
     ctx.pos_in(g)
-    rope_cos_sin(g, "rope_compress", "position_ids", ctx.rope, "cos_q", "sin_q")
-    g.set_group_label("rope_compress", "DeepseekV4RotaryEmbedding（compress YaRN，θ=160000）")
+    rgroup = ("rope_main" if ctx.doc.get("scope", {}).get("attention_type") ==
+              "sliding_attention" else "rope_compress")
+    rope_cos_sin(g, rgroup, "position_ids", ctx.rope, "cos_q", "sin_q")
+    rtype = str(ctx.rope.get("rope_type", "default"))
+    g.set_group_label(rgroup, "DeepseekV4RotaryEmbedding（"
+                      + ("main default，θ=10000" if rtype == "default"
+                         else f"compress YaRN，θ={int(ctx.rope.get('theta', 0))}") + "）")
     rope_apply(g, "q_rope_apply", qn, "cos_q", "sin_q", Rk, Dh, "q_rope")
     g.set_group_label("q_rope_apply", "apply_rotary_pos_emb（interleaved，仅末 64 维）")
     # q_residual 是 Indexer/CSA 共用的边界输出，不能只导出 q_rope
@@ -103,7 +118,7 @@ def build_attn_kv(ctx: Ctx) -> GB:
     g = GB("attn_kv", ctx.pid)
     Dh, Rk = int(ctx.p("Dh")), int(ctx.p("Rk"))
     x = ctx.act_in(g, "attn_normed")
-    proj = linear(g, "kv_proj", x, ctx.weight(g, "kv_proj", "kv_weight"), "kv_proj_linear")
+    proj = linear(g, "kv_proj", x, ctx.weight(g, "kv_proj", ctx.kv_weight_tid), "kv_proj_linear")
     kvn = rmsnorm(g, "kv_proj", proj, "kv_proj_out", ctx.p("EpsN"),
                   ctx.weight(g, "kv_proj", "kv_norm_weight"))
     g.set_group_label("kv_proj", "self.kv_proj→self.kv_norm（共享 KV，K=V）")
@@ -838,8 +853,7 @@ def build_attn_indexer(ctx: Ctx) -> GB:
     return g
 
 
-def build_attn_mask(ctx: Ctx) -> GB:
-    g = GB("attn_mask", ctx.pid)
+def _build_mask_model(ctx, g) -> None:
     W = int(ctx.p("W"))
     B = g.inp("B", [], INT64, "shape")
     cum = g.inp("cache_cumulative_length", [], INT64, "cache_pre")
@@ -851,7 +865,6 @@ def build_attn_mask(ctx: Ctx) -> GB:
     L = g.node("Add", [L, T], ["L_mask"], group="mask_model_build")
     k = g.node("Range", [g.const("mask_model_build/z2", np.int64(0)), L,
                          g.const("mask_model_build/o2", np.int64(1))], ["key_idx"], group="mask_model_build")
-    # key 的绝对位置 = max(0, P-(W-1)) + k（本地窗口内 k 不是绝对位置）
     base = g.node("Sub", [cum, g.const("mask_model_build/wm1b", np.int64(W - 1))], ["win_base0"],
                   group="mask_model_build")
     base = g.node("Max", [base, g.const("mask_model_build/z3", np.int64(0))], ["win_base"],
@@ -876,6 +889,11 @@ def build_attn_mask(ctx: Ctx) -> GB:
     g.node("Expand", ["mask4d", "mask_shape"], ["mask_model"], group="mask_model_build")
     g.set_group_label("mask_model_build",
                       "causal + sliding-window mask（Range/Compare/Where）；2D padding 路径未覆盖")
+
+
+def build_attn_mask(ctx: Ctx) -> GB:
+    g = GB("attn_mask", ctx.pid)
+    _build_mask_model(ctx, g)
     bias = ctx.act_in(g, "c_block_bias")
     g.node("Concat", ["mask_model", bias], ["mask_ext"], group="mask_extend", axis=-1)
     g.set_group_label("mask_extend", "cat(mask, block_bias, dim=-1)")

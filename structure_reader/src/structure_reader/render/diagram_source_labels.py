@@ -10,8 +10,12 @@
 
 from __future__ import annotations
 
+import contextlib
+
 __all__ = [
     "MODELING_FILE",
+    "modeling_file",
+    "use_source_table",
     "op_source_label",
     "tensor_source_label",
     "tensor_source_locator",
@@ -19,6 +23,34 @@ __all__ = [
 ]
 
 MODELING_FILE = "hflib/transformers/src/transformers/models/deepseek_v4/modeling_deepseek_v4.py"
+
+# 当前渲染使用的模型源码命名表（默认 None = 本文件的 DeepSeek 表）。
+# 由页面渲染入口按模型 profile 设置/复原；不在导入时读盘或注册全局模型。
+_ACTIVE_TABLE: dict | None = None
+
+
+@contextlib.contextmanager
+def use_source_table(table: dict | None):
+    """临时启用某模型的源码命名表（ops/tensors/modeling_file）。
+
+    table 形如 ``{"modeling_file": str, "ops": {id: (expr, locator)},
+    "tensors": {id: (label, locator)}}``；None 表示使用本模块内置的 DeepSeek 表。
+    渲染是单线程顺序调用，退出时复原，避免不同模型互相污染。
+    """
+    global _ACTIVE_TABLE
+    previous = _ACTIVE_TABLE
+    _ACTIVE_TABLE = table or None
+    try:
+        yield
+    finally:
+        _ACTIVE_TABLE = previous
+
+
+def modeling_file() -> str:
+    """当前模型所用 modeling 源文件（默认 DeepSeek）。"""
+    if _ACTIVE_TABLE and _ACTIVE_TABLE.get("modeling_file"):
+        return str(_ACTIVE_TABLE["modeling_file"])
+    return MODELING_FILE
 
 # ---------------------------------------------------------------------------
 # 算子 → 源码调用名/表达式（op_id → (源码名, 行号定位)）
@@ -100,6 +132,21 @@ OP_SOURCE: dict[str, tuple[str, str]] = {
     "ffn_residual_combT": ("comb.to(dtype).transpose(-1, -2)", "1184"),
     "ffn_residual_expand": ("post.unsqueeze(-1)*mlp_output.unsqueeze(-2)", "1183"),
     "ffn_residual_mix": ("post*mlp_output.unsqueeze(-2) + matmul(comb.transpose(-1,-2), hidden_states)", "1183-1185"),
+    # 整网总览（token→logits）：网络级外围与终点，行号同 modeling_deepseek_v4.py
+    "net_embed": ("self.embed_tokens(input_ids)", "1332-1333"),
+    "net_position_ids": ("arange(inputs_embeds.shape[1]) + past_seen", "1334-1337"),
+    "net_mask_build": ("create_sliding_window_causal_mask(…)", "1344-1350"),
+    "net_rope_main": ("self.rotary_emb(…, layer_type='main')", "1353"),
+    "net_rope_compress": ("self.rotary_emb(…, layer_type='compress')", "1354"),
+    "net_hc_expand": ("inputs_embeds.unsqueeze(2).expand(-1,-1,hc_mult,-1)", "1351"),
+    "net_layer_loop": ("for layer in self.layers: hidden_states = layer(…)", "1357-1366"),
+    "net_hc_head_norm": ("self.input_norm(x.flatten(2).float())", "1000"),
+    "net_hc_head_project": ("F.linear(flat, self.hc_fn.float())", "1001"),
+    "net_hc_head_pre": ("sigmoid(mixes*hc_scale+hc_base)+eps", "1002"),
+    "net_hc_head_collapse": ("(pre.unsqueeze(-1) * x).sum(dim=2)", "1003"),
+    "net_final_norm": ("self.norm(self.hc_head(hidden_states))", "1368"),
+    "net_logits_slice": ("hidden_states[:, slice_indices, :]", "1510"),
+    "net_lm_head": ("self.lm_head(hidden_states[:, slice_indices, :])", "1511"),
 }
 
 # ---------------------------------------------------------------------------
@@ -272,6 +319,31 @@ _T = {
     "ffn_expanded": ("post.unsqueeze(-1)*mlp_output.unsqueeze(-2)", "1183"),
     "ffn_combT": ("comb.transpose(-1,-2)", "1184"),
     "ffn_mixed": ("torch.matmul(comb.transpose(-1,-2), hidden_states)", "1184"),
+    # 整网总览（token→logits）：网络级边界/主干/权重
+    "attention_mask": ("attention_mask", "1321/1347"),
+    "past_key_values": ("past_key_values（DynamicCache）", "1330-1331"),
+    "past_key_values_post": ("past_key_values（各层 update 后同一对象）", "1364/1369"),
+    "inputs_embeds": ("inputs_embeds", "1333"),
+    "causal_mask": ("causal_mask", "1344-1350"),
+    "hidden_streams": ("hidden_states（hc_mult 路流）", "1351"),
+    "streams_after_layers": ("hidden_states（全部层之后）", "1358-1366"),
+    "embed_tokens_weight": ("self.embed_tokens.weight", "1303"),
+    "cos_main": ('position_embeddings["main"] cos', "1353"),
+    "sin_main": ('position_embeddings["main"] sin', "1353"),
+    "cos_compress": ('position_embeddings["compress"] cos', "1354"),
+    "sin_compress": ('position_embeddings["compress"] sin', "1354"),
+    "hc_head_normed": ("self.input_norm(x.flatten(2).float())", "1000"),
+    "hc_head_fn": ("self.hc_fn", "995"),
+    "hc_head_mixes": ("mixes = F.linear(flat, self.hc_fn.float())", "1001"),
+    "hc_head_base": ("self.hc_base", "996"),
+    "hc_head_scale": ("self.hc_scale", "997"),
+    "hc_head_pre": ("pre = sigmoid(mixes*hc_scale+hc_base)+eps", "1002"),
+    "hc_head_collapsed": ("(pre.unsqueeze(-1) * x).sum(dim=2)", "1003"),
+    "final_norm_weight": ("self.norm.weight", "1307"),
+    "final_hidden": ("hidden_states = self.norm(self.hc_head(...))", "1368"),
+    "lm_input": ("hidden_states[:, slice_indices, :]", "1510"),
+    "lm_head_weight": ("self.lm_head.weight", "1451"),
+    "logits": ("logits", "1511"),
 }
 
 # 计算类型：reading_document 的 op 串（已认可粒度）→ ONNX 式类型名；未收录 token
@@ -291,26 +363,116 @@ _TYPE_MAP = {
     "arange": "Range", "outer": "Outer", "cos/sin": "Cos/Sin", "mask": "Mask",
     "mask-materialize": "MaskMaterialize", "broadcast-mul": "BroadcastMul",
     "chunk": "Split(chunk)", "float": "Cast", "affine": "Affine",
+    "pool": "Softmax + Mul + ReduceSum + RMSNorm",
+    "window_view": "View + Add", "mask_build": "Compare + MaskedFill",
+    "gather_table": "Reshape + Gather + Cast", "concat+pad": "Concat / Pad",
+    "entry_count*M+range+mul+add+expand+rope": "Range + Mul + Add + Expand + RoPE",
+    "entry_count*M": "EntryCount×compress_rate", "range": "Range",
+    "mul": "Mul", "add": "Add", "expand": "Expand", "gather": "Gather", "cast": "Cast",
+    # 整网总览新增的真实计算粒度
+    "embedding": "Embedding", "unsqueeze": "Unsqueeze", "contiguous": "Contiguous",
+    "loop": "Loop(×N)",
+    # GLM-5.3 的真实际度（LayerNorm 与 masked_fill 是真实存在的不同算子）
+    "layernorm": "LayerNorm", "masked_fill": "MaskedFill", "normalize": "Normalize",
+    "scale": "Scale", "matmul+scale": "MatMul + Mul", "view+transpose": "View + Transpose",
+    "scatter+expand+reshape": "ScatterND + Expand + Reshape",
+    "view+topk+sum": "View + TopK + ReduceSum", "linear+scale": "Linear + Mul",
+    "matmul+sum": "MatMul + ReduceSum", "silu*mul": "SiLU + Mul",
+    "one_hot+nonzero": "OneHot + NonZero", "linear×2": "Linear ×2",
+    # GLM-5.3-Flash（glm5_next）的真实际度
+    "conv1d": "Conv1D(depthwise, causal)", "scan": "Scan(递归/分块)",
+    "l2norm": "L2Norm", "rmsnorm-gated": "RMSNorm + Gated",
+    "sigmoid+scale": "Sigmoid + Scale", "broadcast-mul+sum": "BroadcastMul + ReduceSum",
+    "pool+softmax": "Softmax + Mul + ReduceSum",
+    "cast+unsqueeze": "Cast + Unsqueeze", "slice+cast": "Slice + Cast",
+    "tail_append": "Compare + Remainder + Mask",
+    "scatter+add": "ScatterAdd", "ne+unsqueeze": "NotEqual + Unsqueeze",
+    "compare+and": "Compare + And",
 }
 
 
 def op_source_label(op: dict) -> str | None:
-    """算子源码名；无映射回退 None（调用方回退原描述，不冒充源码名）。"""
-    entry = OP_SOURCE.get(op.get("id", ""))
+    """算子源码名；变体按 module_path 给真实表达式/局部别名，不把 HCA/Hash 套 CSA/TopK。"""
+    oid = op.get("id", "")
+    if _ACTIVE_TABLE is not None:
+        entry = (_ACTIVE_TABLE.get("ops") or {}).get(oid)
+        return entry[0] if entry else None
+    mp = str(op.get("module_path", ""))
+    variant_src = {
+        "rope_main": "self.rotary_emb(..., position_ids=position_ids, layer_type='main')",
+        "moe_hash_lookup": "self.tid2eid[input_ids.reshape(-1)].long()",
+        "c_kv_proj": "self.compressor.kv_proj(hidden_states)",
+        "c_gate_proj": "self.compressor.gate_proj(hidden_states)",
+    }
+    if oid in variant_src:
+        return variant_src[oid]
+    if oid == "moe_router" and "Hash" in mp:
+        return "scores.gather(1, indices)"
+    if oid == "c_window_view" and "HCA" in mp:
+        return "chunk_kv.view(B, N_win, compress_rate, head_dim)"
+    if oid == "c_pool" and "HCA" in mp:
+        return "(chunk_kv * chunk_gate.softmax(dim=-2)).sum(dim=-2)"
+    if oid == "c_rope_gen" and "HCA" in mp:
+        return ("first = store_compression_weights(...); positions = arange(n_windows) * "
+                "compress_rate + first_window_position; self.rotary_emb(compressed, position_ids=positions)")
+    if oid == "c_mask_extend":
+        return "F.pad(mask, ...) if block_bias is None else torch.cat([mask, block_bias], -1)"
+    if oid == "hca_block_bias":
+        return ("entry_indices >= (position_ids + 1) // compress_rate → masked_fill(-inf); "
+                "seq_len==1 or compressed_len==0 → None")
+    entry = OP_SOURCE.get(oid)
     return entry[0] if entry else None
 
 
+_VARIANT_OPS = {"c_kv_proj", "c_gate_proj", "c_window_view", "c_pool", "c_rope_gen",
+                "c_mask_extend", "hca_block_bias", "rope_main", "moe_hash_lookup"}
+
+
 def op_source_locator(op: dict) -> str | None:
+    oid = op.get("id", "")
+    if _ACTIVE_TABLE is not None:
+        entry = (_ACTIVE_TABLE.get("ops") or {}).get(oid)
+        return entry[1] if entry else None
+    if oid in _VARIANT_OPS:
+        for ref in op.get("source_refs", []):
+            if ref.get("kind") == "source":
+                p = str(ref.get("path", ""))
+                return f"{p.rsplit('/', 1)[-1]}:{ref.get('locator', '')}"
     entry = OP_SOURCE.get(op.get("id", ""))
     return entry[1] if entry else None
 
 
-def tensor_source_label(tid: str) -> str | None:
+def tensor_source_label(tid: str, variant: str | None = None) -> str | None:
+    if _ACTIVE_TABLE is not None:
+        entry = (_ACTIVE_TABLE.get("tensors") or {}).get(tid)
+        return entry[0] if entry else None
+    variant_t = {
+        "hca": {"c_windows_kv": "chunk_kv", "c_windows_gate": "chunk_gate",
+                "c_kv": "compressor.kv_proj(hidden_states)",
+                "c_gate": "compressor.gate_proj(hidden_states)"},
+        "swa": {"cache_values": "self.values（独立持久字段）"},
+        "hash": {"topk_indices": "tid2eid[input_ids.reshape(-1)]",
+                 "tid2eid": "self.tid2eid（持久 buffer）"},
+        "swa_hash": {"cache_values": "self.values（独立持久字段）",
+                     "topk_indices": "tid2eid[input_ids.reshape(-1)]",
+                     "tid2eid": "self.tid2eid（持久 buffer）"},
+        "csa_hash": {"topk_indices": "tid2eid[input_ids.reshape(-1)]",
+                     "tid2eid": "self.tid2eid（持久 buffer）"},
+    }
+    if variant in variant_t and tid in variant_t[variant]:
+        return variant_t[variant][tid]
     entry = _T.get(tid)
     return entry[0] if entry else None
 
 
-def tensor_source_locator(tid: str) -> str | None:
+def tensor_source_locator(tid: str, variant: str | None = None) -> str | None:
+    if _ACTIVE_TABLE is not None:
+        entry = (_ACTIVE_TABLE.get("tensors") or {}).get(tid)
+        return entry[1] if entry else None
+    if variant in ("hca", "swa", "swa_hash", "csa_hash", "hash") and tid in (
+            "c_windows_kv", "c_windows_gate", "c_kv", "c_gate", "cache_values",
+            "topk_indices", "tid2eid"):
+        return "由本组 phase 的 source_refs 定位"
     entry = _T.get(tid)
     return entry[1] if entry else None
 

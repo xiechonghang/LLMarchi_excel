@@ -19,9 +19,17 @@ HTML 字符串（html.escape 转义），不执行任何模型代码。
 from __future__ import annotations
 
 import html
-import json
 from pathlib import Path
 
+from structure_reader.render.detail_render import (
+    KIND_LABELS as _KIND_LABELS,
+    render_notes_list as _notes_list,
+    render_operator_card,
+    render_parameter_row,
+    render_tensor_row,
+)
+from structure_reader.render.display_names import expand_display_text
+from structure_reader.render.module_narrative import module_narrative, overview_narrative
 from structure_reader.render.diagram import (
     build_cache_graphs,
     build_csa_composite_graph,
@@ -36,14 +44,6 @@ from structure_reader.render.diagram import (
 __all__ = ["render_decoder_page", "DecoderPageError"]
 
 _PHASE_LABELS = {"prefill": "Prefill", "decode": "Decode"}
-_KIND_LABELS = {
-    "activation": "激活",
-    "weight": "权重",
-    "cache": "缓存",
-    "mask": "掩码",
-    "index": "索引",
-    "boundary": "边界",
-}
 
 
 class DecoderPageError(ValueError):
@@ -106,34 +106,10 @@ def render_decoder_page(reading_document: dict,
 # ---------------------------------------------------------------------------
 
 
-def _source_snapshot_lines(
-    path: str, locator: str,
-    snapshot: dict[str, str] | None,
-) -> str | None:
-    """从快照提取 locator 所指的源码行段；不可用时 None（诚实显示）。"""
-    if not snapshot or path not in snapshot:
-        return None
-    text = snapshot[path]
-    lines = text.split("\n")
-    # locator 解析：支持 "123"、"123-456"、"123/456"、"123:456"、
-    # 多段 "1177-1179/1183-1185"（提取所有数字对的最大范围）
-    import re as _re
-    if not locator:
-        return "\n".join(f"{k+1:5d} │ {ln}" for k, ln in enumerate(lines[:80]))
-    nums = [int(x) for x in _re.findall(r"\d+", locator)]
-    if not nums:
-        return "\n".join(f"{k+1:5d} │ {ln}" for k, ln in enumerate(lines[:80]))
-    lo = min(nums)
-    hi = max(nums)
-    start = max(1, lo - 3)
-    end = min(len(lines), hi + 5)
-    sel = lines[start - 1:end]
-    return "\n".join(f"{start + k:5d} │ {ln}" for k, ln in enumerate(sel))
-
-
 def _render_phase(phase: dict, source_snapshot: dict[str, str] | None = None,
                   onnx_bundle: dict | None = None,
-                  candidate_id: str | None = None) -> str:
+                  candidate_id: str | None = None,
+                  onnx_group: str | None = None) -> str:
     pid = phase.get("id", "")
     label = _PHASE_LABELS.get(pid, pid)
     params = phase.get("parameters", [])
@@ -149,38 +125,21 @@ def _render_phase(phase: dict, source_snapshot: dict[str, str] | None = None,
     )
 
     # 参数区
-    out.append('<div class="card"><h3>参数符号区</h3>')
+    out.append(f'<div class="card" id="params-{html.escape(pid)}"><h3>参数符号区</h3>')
     out.append(
         "<div class=\"table-scroll\"><table class=\"params\">"
-        "<thead><tr><th>参数id</th><th>符号</th><th>含义</th>"
+        "<thead><tr><th>参数（完整名称）</th><th>含义</th>"
         "<th>值</th><th>表达式</th><th>来源</th><th>说明</th></tr></thead><tbody>"
     )
     for p in params:
-        value = p.get("value")
-        value_text = "null（数据相关）" if value is None else html.escape(
-            value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-        )
-        sources = "；".join(
-            f'{html.escape(str(r.get("kind", "")))}:{html.escape(str(r.get("path", "")))}'
-            f'[{html.escape(str(r.get("locator", "")))}]'
-            for r in p.get("source_refs", [])
-        ) or "—"
         # 参数行锚点：算子/张量区的 #p-<phase>-<param_id> 联查目标（缺行即断链）
-        out.append(
-            f'<tr id="p-{html.escape(pid)}-{html.escape(str(p.get("id", "")))}">'
-            f'<td class="mono">{html.escape(str(p.get("id", "")))}</td>'
-            f'<td class="mono sym">{html.escape(str(p.get("symbol", "")))}</td>'
-            f"<td>{html.escape(str(p.get('meaning', '')))}</td>"
-            f'<td class="mono">{value_text}</td>'
-            f'<td class="mono">{html.escape(str(p.get("expression") or "—"))}</td>'
-            f'<td class="src">{sources}</td>'
-            f"<td>{html.escape(str(p.get('note', '')))}</td></tr>"
-        )
+        out.append(render_parameter_row(p, pid))
     out.append("</tbody></table></div></div>")
     # ---- 结构图（展示层；边全部来自本文档 operators/tensors 真实引用）----
     # ONNX 式阅读语义：计算框=源码算子名+计算类型；tensor/权重/缓存状态=箭头上
     # 的源码名+shape（端口圆点）；总览为模块导航（虚线框，非计算算子）。
-    out.append('<div class="card"><h3>Decoder 结构总览（并列支路横向展开 + 真实包含边界 + 缓存载体）</h3>')
+    out.append(f'<div class="card" id="overview-{html.escape(pid)}"><h3>Decoder 结构总览（并列支路横向展开 + 真实包含边界 + 缓存载体）</h3>')
+    out.append(overview_narrative(phase))
     out.append('<div class="diagram-scroll">' +
                render_svg(build_overview_graph(phase)) + "</div>")
     out.append(legend_html())
@@ -196,7 +155,7 @@ def _render_phase(phase: dict, source_snapshot: dict[str, str] | None = None,
 
 
     # 配置选择（COMPRESSOR_CLASSES :745-749; :794-795 实例化）
-    out.append('<div class="card"><h3>压缩器配置选择（COMPRESSOR_CLASSES[config.layer_types[layer_idx]]）</h3>')
+    out.append(f'<div class="card" id="config-{html.escape(pid)}"><h3>压缩器配置选择（COMPRESSOR_CLASSES[config.layer_types[layer_idx]]）</h3>')
     out.append('<p>源码 :745-749 定义三种映射；:794-795 <code>self.compressor = COMPRESSOR_CLASSES[self.layer_type](config)</code>。'
                '当前 layer_idx=4 的 <code>config.layer_types[4]="compressed_sparse_attention"</code> → 选中 <b>CSA</b>。</p>')
     out.append('<div class="table-scroll"><table class="params"><thead><tr><th>映射键</th><th>压缩器</th><th>Indexer</th><th>本样板状态</th></tr></thead><tbody>'
@@ -212,7 +171,7 @@ def _render_phase(phase: dict, source_snapshot: dict[str, str] | None = None,
 
     groups = module_groups(phase)
     by_id = {g["id"]: g for g in groups}
-    out.append('<div class="card"><h3>模块详细计算图（计算框=源码算子+类型；'
+    out.append(f'<div class="card" id="modules-{html.escape(pid)}"><h3>模块详细计算图（计算框=源码算子+类型；'
                "tensor/权重=箭头上的源码名+shape；容器=真实包含边界）</h3>")
     if onnx_bundle:
         out.append('<p class="onnx-note onnx-global-note">ONNX 说明：点击“用本地 Netron 打开”会'
@@ -231,11 +190,12 @@ def _render_phase(phase: dict, source_snapshot: dict[str, str] | None = None,
             heading = g["title"]
         out.append(f'<h4 id="mod-{html.escape(pid)}-{html.escape(g["id"])}">'
                    f'{html.escape(heading)}</h4>')
+        out.append(module_narrative(phase, g["id"]))
         left_svg = render_svg(graph)
         out.append('<div class="diagram-scroll">' + left_svg + "</div>")
         if onnx_bundle:
             onnx_ids = ([g["id"], "attn_indexer"] if g["id"] == "attn_csa" else [g["id"]])
-            out.append(_render_onnx_links(pid, onnx_ids, onnx_bundle, candidate_id))
+            out.append(_render_onnx_links(pid, onnx_ids, onnx_bundle, candidate_id, onnx_group))
     out.append(legend_html())
     out.append('<p class="dg-note">计算框=真实算子（源码调用名+计算类型，复合算子如实列出），'
                "点击联查算子卡片；箭头上的 tensor 标注源码变量/表达式名与符号 shape，"
@@ -252,152 +212,34 @@ def _render_phase(phase: dict, source_snapshot: dict[str, str] | None = None,
     cache_notes = phase.get("cache_notes", [])
     if cache_notes:
         out.append('<div class="card"><h3>缓存状态与读写（本阶段）</h3><ul>')
-        out.extend(f"<li>{html.escape(str(n))}</li>" for n in cache_notes)
+        out.extend(f"<li>{html.escape(expand_display_text(str(n)))}</li>" for n in cache_notes)
         out.append("</ul></div>")
 
 
 
     # 算子流
-    out.append('<div class="card"><h3>算子流（按真实阅读顺序）</h3><div class="ops">')
-    blackbox_count = 0
+    out.append(f'<div class="card" id="operators-{html.escape(pid)}"><h3>算子流（按真实阅读顺序）</h3><div class="ops">')
     for i, op in enumerate(operators):
-        blackbox = op.get("analysis_status") == "internal_unanalyzed"
-        if blackbox:
-            blackbox_count += 1
-        status_html = (
-            '<span class="blackbox-flag">◆ 内部未分析</span>' if blackbox
-            else '<span class="ok-flag">已分析</span>'
-        )
-
-        def tensor_cell(tid: str) -> str:
-            t = tensor_index.get(tid)
-            if t is None:
-                return f'<span class="mono err">{html.escape(tid)}（未定义！）</span>'
-            shape = "[" + ", ".join(
-                html.escape(str(a)) for a in t.get("shape", [])
-            ) + "]"
-            return (
-                f'<span class="t-name">{html.escape(str(t.get("name", tid)))}</span>'
-                f'<span class="mono t-shape">{shape}</span>'
-                f'<span class="t-kind k-{html.escape(str(t.get("kind", "")))}">'
-                f"{_KIND_LABELS.get(str(t.get('kind', '')), t.get('kind', ''))}</span>"
-            )
-
-        def weight_cell(tid: str) -> str:
-            t = tensor_index.get(tid)
-            if t is None:
-                return f'<span class="mono err">{html.escape(tid)}（未定义！）</span>'
-            shape = "[" + ", ".join(
-                html.escape(str(a)) for a in t.get("shape", [])
-            ) + "]"
-            return (
-                f'<span class="t-name">{html.escape(str(t.get("name", tid)))}</span>'
-                f'<span class="mono t-shape">{shape}</span>'
-            )
-
-        inputs = "<br>".join(tensor_cell(t) for t in op.get("inputs", [])) or "—"
-        outputs = "<br>".join(tensor_cell(t) for t in op.get("outputs", [])) or "—"
-        weights = "<br>".join(weight_cell(t) for t in op.get("weights", [])) or "—"
-        # 参数引用（含所用张量的引用，联查）
-        involved = list(op.get("parameter_refs", []))
-        for tid in (*op.get("inputs", []), *op.get("outputs", []), *op.get("weights", [])):
-            t = tensor_index.get(tid)
-            if t:
-                for pref in t.get("parameter_refs", []):
-                    if pref not in involved:
-                        involved.append(pref)
-        param_links = "；".join(
-            f'<a class="param-link mono" href="#p-{html.escape(pid)}-{html.escape(pr)}" '
-            f'title="{html.escape(str(param_index[pr].get("meaning", "")) if pr in param_index else "")}">'
-            f"{html.escape(str(param_index[pr].get('symbol', pr)) if pr in param_index else pr)}"
-            f"{('=(' + html.escape(_value_repr(param_index[pr].get('value'))) + ')') if pr in param_index and param_index[pr].get('value') is not None else ''}"
-            f"</a>"
-            for pr in involved
-        ) or "—"
-        sources = "<br>".join(
-            f'<span class="src-item">'
-            f'<button type="button" class="param-link src-btn" '
-            f'onclick="toggleSource(\'srcpanel-{html.escape(pid)}-{html.escape(str(op.get("id", "")))}-{k}\'); return false;">'
-            f'{html.escape(str(r.get("path", "")))}'
-            f'<span class="mono">:{html.escape(str(r.get("locator", "")))}</span></button>'
-            f'<span class="src-note">{html.escape(str(r.get("note", "")))}</span>'
-            f'</span>'
-            for k, r in enumerate(op.get("source_refs", []))
-        ) or "—"
-        # 源码面板（离线快照，由 build 传入 source_snapshot）
-        src_panels = ""
-        for k, r in enumerate(op.get("source_refs", [])):
-            panel_id = f'srcpanel-{html.escape(pid)}-{html.escape(str(op.get("id", "")))}-{k}'
-            src_lines = _source_snapshot_lines(
-                r.get("path", ""), str(r.get("locator", "")), source_snapshot)
-            if src_lines is not None:
-                src_panels += (
-                    f'<div id="{panel_id}" class="src-panel" style="display:none">'
-                    f'<div class="src-panel-head">{html.escape(str(r.get("path","")))}:{html.escape(str(r.get("locator","")))}</div>'
-                    f'<pre class="src-code">{html.escape(src_lines)}</pre></div>')
-            else:
-                src_panels += (
-                    f'<div id="{panel_id}" class="src-panel" style="display:none">'
-                    f'<div class="src-panel-head">{html.escape(str(r.get("path","")))}:{html.escape(str(r.get("locator","")))}</div>'
-                    f'<pre class="src-code">（源码快照不可用：离线单文件未包含该文件内容）</pre></div>')
-        # 回图链接：当前算子在主详图中的 figop id
-        oid_esc = html.escape(str(op.get("id", "")))
-        locate = (f'<a class="param-link" href="#figop-{html.escape(pid)}-{oid_esc}" '
-                  f'onclick="event.preventDefault(); locateInDiagram(\'figop-{html.escape(pid)}-{oid_esc}\'); '
-                  f'return false;">定位到框图 ▸</a>')
-        out.append(
-            f'<div class="op {"op-blackbox" if blackbox else ""}" '
-            f'id="op-{html.escape(pid)}-{oid_esc}">'
-            f'<div class="op-head"><span class="op-no">{i + 1}</span>'
-            f'<span class="mono op-id">{html.escape(str(op.get("id", "")))}</span>'
-            f'<span class="op-name">{html.escape(str(op.get("name", "")))}</span>'
-            f'<span class="op-type mono">{html.escape(str(op.get("op", "")))}</span>'
-            f"{status_html}</div>"
-            f'<div class="op-module">模块：{html.escape(str(op.get("module_path", "")))}</div>'
-            f'<div class="op-io">'
-            f'<div><span class="io-label">输入</span>{inputs}</div>'
-            f'<div><span class="io-label">输出</span>{outputs}</div>'
-            f'<div><span class="io-label">权重</span>{weights}</div>'
-            f"</div>"
-            f"<div><span class=\"io-label\">参数</span>{param_links}</div>"
-            f"<div><span class=\"io-label\">源码</span>{sources}</div>"
-            f"{src_panels}"
-            f"<div><span class=\"io-label\">回图</span>{locate}</div>"
-            f"<div class=\"op-note\">{html.escape(str(op.get('note', '')))}</div>"
-            f"</div>"
-        )
+        out.append(render_operator_card(
+            op, i + 1, pid, tensor_index, param_index, source_snapshot))
     out.append("</div></div>")
 
     # 张量索引
-    out.append('<div class="card"><h3>张量索引（联查）</h3>')
+    out.append(f'<div class="card" id="tensors-{html.escape(pid)}"><h3>张量索引（联查）</h3>')
     out.append(
         "<div class=\"table-scroll\"><table class=\"tensors\">"
         "<thead><tr><th>张量id</th><th>名称</th><th>shape</th>"
         "<th>类型</th><th>参数引用</th><th>说明</th></tr></thead><tbody>"
     )
     for t in tensors:
-        shape = "[" + ", ".join(html.escape(str(a)) for a in t.get("shape", [])) + "]"
-        prefs = "；".join(
-            f'<a class="param-link mono" href="#p-{html.escape(pid)}-{html.escape(pr)}">'
-            f"{html.escape(str(param_index[pr].get('symbol', pr)) if pr in param_index else pr)}</a>"
-            for pr in t.get("parameter_refs", [])
-        ) or "—"
-        out.append(
-            f'<tr id="t-{html.escape(pid)}-{html.escape(str(t.get("id", "")))}">'
-            f'<td class="mono">{html.escape(str(t.get("id", "")))}</td>'
-            f"<td>{html.escape(str(t.get('name', '')))}</td>"
-            f'<td class="mono">{shape}</td>'
-            f"<td>{_KIND_LABELS.get(str(t.get('kind', '')), str(t.get('kind', '')))}</td>"
-            f"<td>{prefs}</td>"
-            f"<td>{html.escape(str(t.get('note', '')))}</td></tr>"
-        )
+        out.append(render_tensor_row(t, pid))
     out.append("</tbody></table></div></div>")
 
     # 覆盖注记
     cov = phase.get("coverage_notes", [])
     if cov:
-        out.append('<div class="card coverage"><h3>覆盖与未覆盖（本阶段）</h3><ul>')
-        out.extend(f"<li>{html.escape(str(n))}</li>" for n in cov)
+        out.append(f'<div class="card coverage" id="coverage-{html.escape(pid)}"><h3>覆盖与未覆盖（本阶段）</h3><ul>')
+        out.extend(f"<li>{html.escape(expand_display_text(str(n)))}</li>" for n in cov)
         out.append("</ul></div>")
 
     out.append("</section>")
@@ -407,7 +249,7 @@ def _render_phase(phase: dict, source_snapshot: dict[str, str] | None = None,
 
 
 def _render_onnx_links(phase_id: str, module_ids: list[str], bundle: dict | None,
-                       candidate_id: str | None) -> str:
+                       candidate_id: str | None, onnx_group: str | None = None) -> str:
     """每个模块一个本地 llmarchi-netron 链接（唤起本机 Netron）+ 下载/映射链接。"""
     if not bundle or not candidate_id:
         return ""
@@ -423,9 +265,11 @@ def _render_onnx_links(phase_id: str, module_ids: list[str], bundle: dict | None
         badge = (" 单专家模板；" if mid == "moe_expert" else
                  " 默认因果/滑窗，padding 未覆盖；" if mid == "attn_mask" else "")
         base = "../" + html.escape(entry.get("base", ""))
-        label = "CSA" if mid == "attn_csa" else ("Indexer" if mid == "attn_indexer" else mid)
+        label = ("HCA" if onnx_group == "hca-topk" else "CSA") if mid == "attn_csa" else (
+            "Indexer" if mid == "attn_indexer" else mid)
         href = (f"llmarchi-netron://open?candidate={html.escape(candidate_id)}"
-                f"&phase={html.escape(phase_id)}&module={html.escape(mid)}&variant=sim")
+                f"&phase={html.escape(phase_id)}&module={html.escape(mid)}&variant=sim"
+                + (f"&group={html.escape(onnx_group)}" if onnx_group else ""))
         parts.append(
             f'<p class="onnx-open">ONNX（{html.escape(label)}）：'
             f'<a class="onnx-open-link" data-module="{html.escape(phase_id)}/{html.escape(mid)}" '
@@ -438,20 +282,6 @@ def _render_onnx_links(phase_id: str, module_ids: list[str], bundle: dict | None
             f'<a href="{base}/model.sim.onnx">简化 onnx</a> · '
             f'<a href="{base}/mapping.json">映射</a></span></p>')
     return "".join(parts)
-
-
-def _value_repr(value) -> str:
-    if value is None:
-        return "null"
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, ensure_ascii=False)
-
-
-def _notes_list(notes: list) -> str:
-    if not notes:
-        return ""
-    return "<ul>" + "".join(f"<li>{html.escape(str(n))}</li>" for n in notes) + "</ul>"
 
 
 # ---------------------------------------------------------------------------
@@ -516,6 +346,16 @@ th {{ background: var(--code); font-weight: 600; }}
   background: #fdf1e3; border: 1px solid #e8c9a6; border-radius: 8px; padding: 0 6px; }}
 .onnx-global-note {{ background: #eef4fa; border: 1px solid #c9d9ea; border-radius: 8px;
   padding: 6px 10px; }}
+/* 反馈11：模块中文结构讲解（正文不裁切；沿用浅/暗主题变量） */
+.narr {{ margin: 6px 0 12px; padding: 10px 14px; background: var(--code);
+  border: 1px solid var(--line); border-radius: 8px; font-size: 13.5px; line-height: 1.7; }}
+.narr-lead {{ margin: 0 0 6px; }}
+.narr-steps {{ margin: 4px 0 2px 22px; padding: 0; }}
+.narr-steps li {{ margin: 4px 0; }}
+.narr-sub {{ margin: 10px 0 2px; background: transparent;
+  border-left: 3px solid var(--accent); border-radius: 0; padding: 2px 0 2px 12px; }}
+.narr-link {{ color: var(--accent); text-decoration: none; }}
+.narr-link:hover {{ text-decoration: underline; }}
 .onnx-details table {{ border-collapse: collapse; width: 100%; }}
 .onnx-details th, .onnx-details td {{ border: 1px solid var(--line); padding: 2px 6px;
   vertical-align: top; }}

@@ -1,0 +1,92 @@
+{
+  "parent": 16,
+  "children": [
+    17,
+    18,
+    19,
+    20,
+    21
+  ],
+  "expected_children": [
+    17,
+    18,
+    19,
+    20,
+    21
+  ],
+  "parent_links_ok": true,
+  "checks": [
+    {
+      "id": "D01",
+      "number": 17,
+      "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/17",
+      "state": "open",
+      "labels": [
+        "ready-for-agent"
+      ],
+      "blocked_by": [],
+      "has_acceptance_criteria": true,
+      "ok": true
+    },
+    {
+      "id": "D02",
+      "number": 18,
+      "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/18",
+      "state": "open",
+      "labels": [
+        "ready-for-agent"
+      ],
+      "blocked_by": [
+        17
+      ],
+      "has_acceptance_criteria": true,
+      "ok": true
+    },
+    {
+      "id": "D03",
+      "number": 19,
+      "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/19",
+      "state": "open",
+      "labels": [
+        "ready-for-agent"
+      ],
+      "blocked_by": [
+        17
+      ],
+      "has_acceptance_criteria": true,
+      "ok": true
+    },
+    {
+      "id": "D04",
+      "number": 20,
+      "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/20",
+      "state": "open",
+      "labels": [
+        "ready-for-agent"
+      ],
+      "blocked_by": [
+        17
+      ],
+      "has_acceptance_criteria": true,
+      "ok": true
+    },
+    {
+      "id": "D05",
+      "number": 21,
+      "url": "https://github.com/xiechonghang/LLMarchi_excel/issues/21",
+      "state": "open",
+      "labels": [
+        "ready-for-agent"
+      ],
+      "blocked_by": [
+        18,
+        19,
+        20
+      ],
+      "has_acceptance_criteria": true,
+      "ok": true
+    }
+  ],
+  "dispatched": false,
+  "ok": true
+}

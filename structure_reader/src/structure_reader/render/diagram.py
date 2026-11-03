@@ -18,8 +18,8 @@ from __future__ import annotations
 import html
 
 from structure_reader.render.diagram_source_labels import (
-    MODELING_FILE,
     compute_type_label,
+    modeling_file,
     op_source_label,
     op_source_locator,
     tensor_source_label,
@@ -44,18 +44,19 @@ _MODULE_RULES: tuple[tuple[str, str, object], ...] = (
     ("mhc_attn", "mHC 权重与流坍缩（attn_hc）", "attn_hc_"),
     ("norm_attn", "RMSNorm（input_layernorm）", ("attn_norm",)),
     ("attn_q", "Attention — Q 支路（低秩+部分 RoPE）",
-     ("rope_compress", "q_a_proj", "q_a_norm", "q_b_proj", "q_b_norm", "q_rope_apply")),
+     ("rope_compress", "rope_main", "q_a_proj", "q_a_norm", "q_b_proj", "q_b_norm",
+      "q_rope_apply")),
     ("attn_kv", "Attention — 共享 KV 支路（K=V）",
      ("kv_proj", "kv_head_view", "kv_rope_apply")),
     ("attn_cache", "Attention — 主 KV 缓存更新", ("cache_update",)),
     ("attn_csa", "CSA 压缩器（窗口缓冲/Ca-Cb 重叠/条目 RoPE）",
-     ("c_kv_gate_proj", "c_store_window", "c_window_view", "c_pool", "c_rope_gen",
-      "c_rope", "c_update_states")),
+     ("c_kv_gate_proj", "c_kv_proj", "c_gate_proj", "c_store_window", "c_window_view",
+      "c_pool", "c_rope_gen", "c_rope", "c_update_states")),
     ("attn_indexer", "Lightning Indexer（打分/topk/块偏置）",
      ("i_kv_gate_proj", "i_store_window", "i_window_view", "i_pool_rope",
       "i_update_states", "i_q_proj", "i_scorer", "i_topk", "c_block_bias")),
     ("attn_mask", "模型级滑动 mask 与压缩条目扩展",
-     ("mask_model_build", "mask_extend")),
+     ("mask_model_build", "mask_extend", "hca_block_bias", "c_mask_extend")),
     ("attn_core", "eager 注意力核心（QK→mask→sink→softmax→AV）",
      ("kv_concat", "repeat_kv", "qk_scaled", "mask_add", "sink_softmax", "av_matmul")),
     ("attn_out", "逆 RoPE 与分组输出投影",
@@ -65,7 +66,7 @@ _MODULE_RULES: tuple[tuple[str, str, object], ...] = (
     ("mhc_ffn", "mHC 权重与流坍缩（ffn_hc）", "ffn_hc_"),
     ("norm_ffn", "RMSNorm（post_attention_layernorm）", ("ffn_norm",)),
     ("moe_route", "MoE 输入展平与 TopK 路由",
-     ("moe_flatten", "moe_router", "moe_dispatch")),
+     ("moe_flatten", "moe_router", "moe_dispatch", "moe_hash_lookup")),
     ("moe_expert", "MoE 专家模板（一份；不复制 E 份）",
      ("moe_select_tokens", "moe_expert_slice", "moe_expert_gu", "moe_expert_clamp",
       "moe_expert_act", "moe_expert_down", "moe_expert_weight", "moe_combine",
@@ -114,6 +115,8 @@ _CACHE_FIELD_SPECS: dict[str, tuple[tuple[str, str, str], ...]] = {
          "past_key_values.layers[layer_idx].cumulative_length · HF :196-197"),
         ("full", "full = cat(keys, kv_rope)（update 局部返回，本次读视图，不持久）",
          "HF :197-201 update 内局部变量 full（非 Cache 存储属性）"),
+        ("values", "self.values（SWA 为独立持久字段；HCA 中 = keys 别名）",
+         "SWA DynamicSlidingWindowLayer.values；HCA self.values=self.keys"),
     ),
     "csa": (
         ("buffer_kv", "self.buffer_kv['compressor']（未闭窗余量）",
@@ -149,6 +152,7 @@ _CACHE_FIELD_SPECS: dict[str, tuple[tuple[str, str, str], ...]] = {
 _CACHE_TENSOR_FIELD: dict[str, tuple[str, str]] = {
     "cache_keys": ("main", "keys"), "cache_keys_post": ("main", "keys"),
     "cache_cumlen": ("main", "cumlen"), "kv_full": ("main", "full"),
+    "cache_values": ("main", "values"), "cache_values_post": ("main", "values"),
     "cache_buffer_c_kv": ("csa", "buffer_kv"),
     "cache_buffer_c_kv_post": ("csa", "buffer_kv"),
     "cache_buffer_c_gate": ("csa", "buffer_gate"),
@@ -218,7 +222,14 @@ def module_groups(phase: dict, rules=None) -> list[dict]:
                 groups["other"] = {"id": "other", "title": "其他", "ops": []}
                 order.append("other")
             groups["other"]["ops"].append(op)
-    return [groups[gid] for gid in order if gid in groups and groups[gid]["ops"]]
+    result = [groups[gid] for gid in order if gid in groups and groups[gid]["ops"]]
+    op_ids = {o.get("id", "") for o in phase.get("operators", [])}
+    for g in result:
+        if g["id"] == "attn_csa" and "c_kv_proj" in op_ids:
+            g["title"] = "HCA 压缩器（非重叠 compress_rate=128，无 Indexer/overlap）"
+        if g["id"] == "moe_route" and "moe_hash_lookup" in op_ids:
+            g["title"] = "Hash 路由（input_ids→tid2eid 查表→scores gather）"
+    return result
 
 
 def _cache_family(tid: str) -> str | None:
@@ -270,12 +281,27 @@ def _edge_kind(tid: str, tensors: dict[str, dict]) -> str:
     return "flow"
 
 
+_VARIANT_CTX: str | None = None
+
+
+def _phase_variant(phase: dict) -> str | None:
+    ids = {o.get("id", "") for o in phase.get("operators", [])}
+    if "c_kv_proj" in ids:
+        return "hca"
+    if "rope_main" in ids:
+        return "swa_hash" if "moe_hash_lookup" in ids else "swa"
+    if "moe_hash_lookup" in ids:
+        return "csa_hash"
+    return None
+
+
 def _tensor_label(tid: str, tensors: dict[str, dict]) -> str:
     """边上张量标签：源码变量/表达式名 + 符号 shape（ONNX 式：tensor 是箭头上的
     传输信息，不是计算框）。无源码映射时回退文档名并标注（内部 id 不冒充源码）。"""
+    from structure_reader.render.display_names import shape_text
     t = tensors.get(tid)
-    shape = ",".join(str(a) for a in t.get("shape", [])) if t else ""
-    src = tensor_source_label(tid)
+    shape = shape_text(t.get("shape", [])) if t else ""
+    src = tensor_source_label(tid, _VARIANT_CTX)
     if src:
         return f"{src} [{shape}]" if shape else src
     name = t.get("name", tid) if t else tid
@@ -284,11 +310,12 @@ def _tensor_label(tid: str, tensors: dict[str, dict]) -> str:
 
 
 def _cond_label(op_id: str, phase: dict) -> str:
+    from structure_reader.render.display_names import expand_display_text
     entry = _CONDITION_LABELS.get(op_id)
     if entry is None:
         return ""
     text, needed = entry
-    return text if set(needed) <= _param_ids(phase) else ""
+    return expand_display_text(text) if set(needed) <= _param_ids(phase) else ""
 
 
 def _op_node(phase: dict, op: dict) -> dict:
@@ -300,7 +327,7 @@ def _op_node(phase: dict, op: dict) -> dict:
     sub = compute_type_label(op)
     title_bits = [op["id"], op.get("module_path", "")]
     if locator:
-        title_bits.append(f"{MODELING_FILE.split('/')[-1]}:{locator}")
+        title_bits.append(f"{modeling_file().rsplit('/', 1)[-1]}:{locator}")
     return {
         "id": f"op:{op['id']}", "kind": "op",
         "label": label, "sub": sub,
@@ -314,13 +341,13 @@ def _tensor_node(phase: dict, tid: str, tensors: dict[str, dict], kind_hint: str
     """非计算端点（端口）：渲染为小圆点/输入输出标识，不再画 tensor/权重/缓存矩形。
     文字（源码名+shape+时序角色）走箭头标签；title 保留内部 id 与源码行号联查。"""
     t = tensors.get(tid, {})
-    src = tensor_source_label(tid)
-    locator = tensor_source_locator(tid)
+    src = tensor_source_label(tid, _VARIANT_CTX)
+    locator = tensor_source_locator(tid, _VARIANT_CTX)
     if src:
         label = src
     else:
         label = t.get("name", tid)
-    title = tid + (f" · {MODELING_FILE.split('/')[-1]}:{locator}" if locator else "")
+    title = tid + (f" · {modeling_file().rsplit('/', 1)[-1]}:{locator}" if locator else "")
     return {
         "id": f"t:{tid}", "kind": kind_hint,
         "label": label, "sub": sub or tid,
@@ -351,7 +378,13 @@ def _dedup_edges(edges: list[dict]) -> list[dict]:
     return out
 
 
+def _ids_of(phase: dict) -> set[str]:
+    return {o.get("id", "") for o in phase.get("operators", [])}
+
+
 def build_module_graph(phase: dict, group: dict, field_ports: bool = True) -> dict:
+    global _VARIANT_CTX
+    _VARIANT_CTX = _phase_variant(phase)
     """模块算子图：节点=组内算子+外部端口，边=真实张量引用。
 
     - 内部边：producer op → consumer op（组内；仅由输出侧生成一次，不做输入/输出
@@ -500,7 +533,10 @@ def build_module_graph(phase: dict, group: dict, field_ports: bool = True) -> di
             {
                 "id": f"frame:store:{fam}",
                 "label": "持久状态存储",
-                "sub": ("past_key_values.layers[layer_idx] : DeepseekV4CSACache"
+                "sub": ("past_key_values.layers[layer_idx] : "
+                        + ("DynamicSlidingWindowLayer" if "rope_main" in _ids_of(phase) else
+                           "DeepseekV4HCACache" if "c_kv_proj" in _ids_of(phase) else
+                           "DeepseekV4CSACache")
                         + (" · HF :156-294" if fam == "main" else " · CSA :626-690")),
                 "children": [fid for fid in field_order
                              if fid[2:].split(":", 1)[0] == fam],
@@ -519,6 +555,19 @@ def _field_node(family: str, field_key: str, ports: list[str]) -> dict:
         label, sub = field_key, f"{family} 字段"
     else:
         _key, label, sub = spec
+    if family == "main" and _VARIANT_CTX == "swa_hash":
+        if field_key == "keys":
+            label = "self.keys（SWA 独立持久字段）"
+            sub = "DynamicSlidingWindowLayer.keys：调用前/调用后各自字段"
+        elif field_key == "values":
+            label = "self.values（SWA 独立持久字段）"
+            sub = "DynamicSlidingWindowLayer.values：与 keys 独立，不共享存储"
+        elif field_key == "full":
+            label = "full_key_states（update 局部；Attention 取 [0]）"
+            sub = "full_value_states 另存；AV 只用 Attention 传入的 K=V"
+    if family == "main" and _VARIANT_CTX == "hca" and field_key == "values":
+        label = "self.values（HCA 中 = keys 别名）"
+        sub = "HCACache self.values = self.keys（同一存储）"
     key = "compressor" if family == "csa" else ("indexer" if family == "indexer" else None)
     if family == "main" and field_key == "cumlen":
         # 真实 HF 属性是 self.cumulative_length（modeling_deepseek_v4.py:196-197），
@@ -527,10 +576,14 @@ def _field_node(family: str, field_key: str, ports: list[str]) -> dict:
     elif family == "main" and field_key == "full":
         # full 是 update 的局部返回变量（:197-201），不是 Cache 的持久字段：
         # 它只以“本次读视图/不持久”身份出现在视图端口，不冒充存储属性。
-        owner = ("DeepseekV4CSACache.update 返回的局部 full（本次读视图，不持久；"
+        cls = ("DynamicSlidingWindowLayer" if _VARIANT_CTX == "swa_hash" else
+               "DeepseekV4HCACache" if _VARIANT_CTX == "hca" else "DeepseekV4CSACache")
+        owner = (f"{cls}.update 返回的局部 full（本次读视图，不持久；"
                  "不是 past_key_values 的 Cache 字段）")
     else:
-        owner = f"past_key_values.layers[layer_idx].{field_key}"
+        cls = ("DynamicSlidingWindowLayer" if _VARIANT_CTX == "swa_hash" else
+               "DeepseekV4HCACache" if _VARIANT_CTX == "hca" else "DeepseekV4CSACache")
+        owner = f"past_key_values.layers[layer_idx].{field_key}（{cls}）"
         if key:
             owner += f"['{key}']"
     return {
@@ -782,7 +835,10 @@ _OVERVIEW_FRAMES = (
 )
 
 
-def build_overview_graph(phase: dict, rules=None) -> dict:
+def build_overview_graph(phase: dict, rules=None, positions=None,
+                        frames: list | None = None) -> dict:
+    global _VARIANT_CTX
+    _VARIANT_CTX = _phase_variant(phase)
     """Decoder 总览：模块框 + 真实包含容器 + 缓存载体 + 长连接同名接口。
 
     聚合边逐条由真实张量支撑（producer 属 src、consumer 属 dst），方向不变；
@@ -791,6 +847,8 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
     同名接口（来源端 ▸ 名称 / 去向端 名称 ▸），避免长线互相压盖，
     同时保留完整依赖（两条 stub 边各自保留原张量清单与方向）。
     """
+    custom_layout = positions is not None
+    pos_map = dict(positions or _OVERVIEW_POS)
     tensors = _tensor_map(phase)
     producers = _producers(phase)
     consumers = _consumers(phase)
@@ -810,8 +868,8 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
             "href": f"#mod-{phase['id']}-{g['id']}",
             "title": "，".join(op["id"] for op in g["ops"]),
         }
-        if g["id"] in _OVERVIEW_POS:
-            positions[f"m:{g['id']}"] = _OVERVIEW_POS[g["id"]]
+        if g["id"] in pos_map:
+            positions[f"m:{g['id']}"] = pos_map[g["id"]]
     for tid in ("hidden_streams_in", "input_ids", "position_ids", "hidden_streams_out"):
         if tid in tensors:
             nodes[f"t:{tid}"] = {
@@ -819,8 +877,37 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
                 "label": tensor_source_label(tid) or tensors[tid]["name"],
                 "sub": tid, "href": f"#t-{phase['id']}-{tid}", "title": tid,
             }
-            if tid in _OVERVIEW_POS:
-                positions[f"t:{tid}"] = _OVERVIEW_POS[tid]
+            if tid in pos_map:
+                positions[f"t:{tid}"] = pos_map[tid]
+    if custom_layout:
+        # 自定义布局（其它模型）：把纯输入/纯输出的 boundary 张量画成真实端口，
+        # 否则聚合边因端点节点不存在而被跳过。不给默认布局加节点，保持既有页面字节。
+        for tid, tensor in tensors.items():
+            if tensor.get("kind") != "boundary":
+                continue
+            has_consumer = bool(consumers.get(tid))
+            has_producer = bool(producers.get(tid))
+            if has_consumer == has_producer:
+                continue  # 既有 producer 又有 consumer：走模块间聚合边
+            node_id = f"t:{tid}"
+            if node_id in nodes:
+                continue
+            nodes[node_id] = {
+                "id": node_id, "kind": "boundary",
+                "label": tensor_source_label(tid) or tensor.get("name", tid),
+                "sub": tid, "href": f"#t-{phase['id']}-{tid}", "title": tid,
+            }
+            if tid in pos_map:
+                positions[node_id] = pos_map[tid]
+
+    op_ids = {o.get("id", "") for o in phase.get("operators", [])}
+    if "tid2eid" in tensors:
+        nodes["t:tid2eid"] = {
+            "id": "t:tid2eid", "kind": "boundary", "label": "tid2eid（持久表）",
+            "sub": "[vocab_size, num_experts_per_tok]", "href": f"#t-{phase['id']}-tid2eid",
+            "title": "HashRouter.tid2eid 持久 buffer（非学习权重、非时序 KV）",
+        }
+        positions["t:tid2eid"] = (10, 2.4)
     cache_families_present = {
         _cache_family(tid) for tid, t in tensors.items()
         if (t.get("kind") == "cache" and _cache_family(tid)) or tid == "kv_full"
@@ -828,14 +915,22 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
     for family in ("main", "csa", "indexer"):
         if family in cache_families_present:
             key = f"c:{family}"
-            fields = "，".join(s[1].split("（")[0] for s in _CACHE_FIELD_SPECS[family])
+            if "c_kv_proj" in op_ids and family == "csa":
+                fields = "buffer_kv/buffer_gate/compressed_kv/entry_count（无 overlap）"
+                title_text = "HCA 压缩器缓存（非重叠 128；无 Indexer/overlap）"
+            else:
+                fields = "，".join(s[1].split("（")[0] for s in _CACHE_FIELD_SPECS[family])
+                title_text = _CACHE_FAMILY_TITLES[family]
             nodes[key] = {
                 "id": key, "kind": "carrier",
                 "label": "持久状态存储",
-                "sub": f"{_CACHE_FAMILY_TITLES[family]} · {fields}",
+                "sub": f"{title_text} · {fields}",
                 "href": "",
-                "title": "past_key_values.layers[layer_idx] : DeepseekV4CSACache · "
-                         f"{_CACHE_FAMILY_TITLES[family]}",
+                "title": (f"past_key_values.layers[layer_idx] : "
+                          + ("DynamicSlidingWindowLayer" if "rope_main" in op_ids else
+                             "DeepseekV4HCACache" if "c_kv_proj" in op_ids else
+                             "DeepseekV4CSACache")
+                          + f" · {title_text}"),
             }
             positions[key] = _OVERVIEW_POS[key]
 
@@ -855,7 +950,7 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
                     entry["tensors"].append(tid)
                     entry["kinds"].add(kind)
                 continue
-        elif t.get("kind") == "boundary":
+        elif t.get("kind") == "boundary" or tid == "tid2eid":
             src = f"t:{tid}"
         elif kind == "cache" and _cache_family(tid):
             src = f"c:{_cache_family(tid)}"
@@ -900,8 +995,9 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
         span = dst_pos[0] - src_pos[0]
         if is_cache_set:
             edge_entry = {"src": src, "dst": dst, "kind": "cache",
-                          "label": (f"读前态 {n} 项" if src.startswith("c:")
-                                    else f"写后态 {n} 项"),
+                          "label": ("持久表 1 项（静态；查表读）" if src == "t:tid2eid"
+                                    else (f"读前态 {n} 项" if src.startswith("c:")
+                                          else f"写后态 {n} 项")),
                           "cond": "", "href": "", "title": title}
             if {src, dst} == {"c:main", "m:attn_cache"}:
                 # 主 KV 载体与缓存更新之间的真实读写线：走载体与 attn_core 之间的
@@ -1008,11 +1104,37 @@ def build_overview_graph(phase: dict, rules=None) -> dict:
         nodes.pop(nid, None)
         positions.pop(nid, None)
 
+    op_ids = {o.get("id", "") for o in phase.get("operators", [])}
+    has_hca = "c_kv_proj" in op_ids
+    has_csa = "c_window_view" in op_ids
+    has_indexer = "i_topk" in op_ids
+    if frames is not None:
+        spec = list(frames)
+    elif has_hca:
+        spec = [
+            ("frame:attention", "Attention（DeepseekV4Attention）",
+             "HCA 压缩器（非重叠 compress_rate=128，无 Indexer/overlap）", "attn",
+             ("m:attn_q", "m:attn_kv", "m:attn_csa", "m:attn_cache", "m:attn_mask",
+              "m:attn_core", "m:attn_out", "c:main", "c:csa", "frame:csa")),
+            ("frame:csa", "HCA Compressor（heavily_compressed_attention）",
+             "非重叠 128 窗口；kv/gate 各 head_dim；无 Indexer/CaCb/overlap", "csa",
+             ("m:attn_csa",)),
+        ]
+    elif has_csa:
+        spec = list(_OVERVIEW_FRAMES)
+    else:
+        spec = [
+            ("frame:attention", "Attention（DeepseekV4Attention）",
+             "SWA：无 compressor、无 Indexer、无压缩缓存", "attn",
+             ("m:attn_q", "m:attn_kv", "m:attn_cache", "m:attn_mask",
+              "m:attn_core", "m:attn_out", "c:main")),
+        ]
+    frame_ids = {f[0] for f in spec} | {n for f in spec for n in f[4]}
     frames = [
         {"id": fid, "label": label, "sub": sub, "style": style,
-         "children": list(children),
+         "children": [c for c in children if c in frame_ids],
          "extra_top": 20 if fid == "frame:attention" else 0}
-        for fid, label, sub, style, children in _OVERVIEW_FRAMES
+        for fid, label, sub, style, children in spec
     ]
     return {"id": "overview", "title": "Decoder 总览", "nodes": list(nodes.values()),
             "edges": edges, "phase": phase["id"], "positions": positions,
@@ -1240,13 +1362,13 @@ def _node_lines(node: dict) -> list[str]:
 def _node_sub_lines(node: dict) -> list[str]:
     """计算类型副行：完整显示不截断（最多 2 行，长者换行）。"""
     sub = node.get("sub", "")
-    return _wrap(sub, 30)[:2] if sub else []
+    return _wrap(sub, 30, max_lines=None) if sub else []
 
 
 def _node_height(node: dict, lines: list[str]) -> float:
     """节点高度容纳实际文字行数与副标题行数，避免重叠/截断。"""
     if node["kind"] == "field":
-        return _H_FIELD
+        return max(_H_FIELD, 20.0 + 12.0 * (len(_node_lines(node)) + len(_node_sub_lines(node))))
     sub_lines = _node_sub_lines(node)
     h = 12.0 + 12.0 * len(lines) + (13.0 * len(sub_lines) if sub_lines else 8.0)
     return max(_NODE_H_MIN, h)
@@ -1258,8 +1380,15 @@ def _wrap(text: str, limit: int, max_lines: int | None = 3) -> list[str]:
     for ch in text:
         w = 2 if ord(ch) > 0x2E80 else 1
         if width + w > limit:
-            lines.append(current)
-            current, width = ch, w
+            # 反馈12：优先在分隔符后断行，避免把 batch_size/num_attention_heads 等完整名称劈开
+            cut = max((current.rfind(d) for d in ", ×÷+"), default=-1)
+            if cut >= 8:
+                lines.append(current[:cut + 1])
+                current = current[cut + 1:] + ch
+                width = sum(2 if ord(c) > 0x2E80 else 1 for c in current)
+            else:
+                lines.append(current)
+                current, width = ch, w
         else:
             current += ch
             width += w
@@ -1273,7 +1402,7 @@ def _wrap(text: str, limit: int, max_lines: int | None = 3) -> list[str]:
 def _wrap_edge_label(text: str) -> list[str]:
     """边标签有界换行（最多 3 行；全文放 <title> 联查/悬停）——
     源码名与 shape 维度不再因两行截断丢失。"""
-    return _wrap(text, 30)[:3]
+    return _wrap(text, 34, max_lines=None)
 
 
 def _label_block_box(full_label: str) -> tuple[float, float, int]:
@@ -1323,10 +1452,10 @@ def render_svg(graph: dict, wide: bool = False) -> str:
         cond = e.get("cond", "")
         label = e.get("label", "")
         if cond and label:
-            return [cond] + _wrap_edge_label(label)
+            return [cond + "｜"] + _wrap_edge_label(label)
         if label:
             return _wrap_edge_label(label)
-        return [cond] if cond else []
+        return [cond + "｜"] if cond else []
 
     max_block_w, max_label_lines = 0.0, 0
     for e in edges:
@@ -2030,7 +2159,7 @@ def render_svg(graph: dict, wide: bool = False) -> str:
     parts.append("</svg>")
     return "".join(parts)
 
-_LEGEND_ITEMS = (
+DEFAULT_LEGEND = (
     ("opbox", "计算算子框（源码名 + 实际计算类型）"),
     ("navbox", "导航框（总览模块，虚线——非计算算子）"),
     ("frame", "容器边界（真实包含：Attention ⊃ CSA ⊃ Indexer；非计算算子）"),
@@ -2044,12 +2173,15 @@ _LEGEND_ITEMS = (
 )
 
 
-def legend_html() -> str:
-    items = "".join(
-        f'<span><i class="dg-swatch {cls}"></i>{html.escape(text)}</span>'
-        for cls, text in _LEGEND_ITEMS
+def legend_html(items=None) -> str:
+    """图例：默认 DeepSeek 实际机制；其它模型通过 profile 传入自己的图例文案。"""
+    from structure_reader.render.display_names import expand_display_text
+    active = DEFAULT_LEGEND if items is None else items
+    items_html = "".join(
+        f'<span><i class="dg-swatch {cls}"></i>{html.escape(expand_display_text(text))}</span>'
+        for cls, text in active
     )
-    return f'<div class="dg-legend">{items}</div>'
+    return f'<div class="dg-legend">{items_html}</div>'
 
 
 def diagram_css() -> str:
@@ -2093,8 +2225,8 @@ svg.dg { display: block; min-width: 100%; height: auto; font-family: inherit; }
 .dg-arr-flow { fill: #1f4e79; }
 .dg-arr-weight { fill: #b08d57; }
 .dg-arr-cache { fill: #2b5d8f; }
-/* 容器：真实包含边界（Attention ⊃ CSA ⊃ Indexer）与持久状态存储——只表达
-   包含/归类，不是计算算子，不参与数据流方向 */
+/* 容器：真实包含边界与持久状态存储——只表达包含/归类，不是计算算子，
+   不参与数据流方向；具体包含关系由各模型 profile 的 frames 决定 */
 .dg-frame rect { fill: none; stroke: #6b7a8c; stroke-width: 1.2; stroke-dasharray: 10 6; }
 .dg-frame.attn rect { stroke: #1f4e79; stroke-width: 1.7; }
 .dg-frame.csa rect { stroke: #7a3b0e; stroke-width: 1.5; }

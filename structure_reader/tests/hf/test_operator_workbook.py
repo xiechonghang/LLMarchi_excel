@@ -414,8 +414,12 @@ class TestInputIsNotConsumedOrRewritten(unittest.TestCase):
             elif isinstance(node, ast.ImportFrom):
                 if node.module:
                     roots.add(node.module.split(".")[0])
-        self.assertLessEqual(roots, {"__future__", "io", "json", "re", "zipfile",
-                                     "datetime", "openpyxl"}, sorted(roots))
+        # T04：通用导出器复用 scenario_evaluator 的白名单表达式→Excel 编译，
+        # 因此允许 structure_reader（仍禁止 HF 提取器/torch/磁盘/进程）。
+        # T10：性能区用 math.ceil 估算合并说明行的行高（纯数值换算，不读磁盘/进程）。
+        self.assertLessEqual(roots, {"__future__", "io", "json", "math", "re",
+                                     "zipfile", "datetime", "openpyxl",
+                                     "structure_reader"}, sorted(roots))
         calls = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):

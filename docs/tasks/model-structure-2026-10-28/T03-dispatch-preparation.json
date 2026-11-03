@@ -1,0 +1,9 @@
+{
+  "task": "T03",
+  "state": "dispatched",
+  "baseline_dir": "/var/folders/cf/v8s2g_0n0_5c9x9brbcy1nw00000gn/T/llmarchi-T03-baseline-20261028-ditww4rw",
+  "baseline_manifest": "/var/folders/cf/v8s2g_0n0_5c9x9brbcy1nw00000gn/T/llmarchi-T03-baseline-20261028-ditww4rw/manifest.json",
+  "baseline_head": "947ae78f120279403ec0a4c539e99d3d8869e1d6",
+  "prepared_at": "2026-10-28T15:55:11.399888+08:00",
+  "dispatched_at": "2026-10-28T15:57:25.166171+08:00"
+}

@@ -1,5 +1,21 @@
 # 模型结构阅读需求确认稿（2026-10-17）
 
+> 2026-10-27用户要求长HTML增加分层跳转目录；仅导航/标题锚点，阶段→真实组合→章节/模块，便于持续访问且不遮图表；保现有数据与ONNX。原Harness App1017 High实施，M2阅读pending/M3未启/自动PAUSED。详[目录反馈](acceptance/hf_m2_reading_toc_feedback01.md)。
+
+> 2026-10-26用户明确“缩写和维度数值都需要检查”，继续M2 ONNX参数实核。612完整名结果不证明维度语义正确；按根config/HF核真实静态参数与关键轴/广播/数值，已知尺寸写真实dim_value，动态长度不猜，有限生产小例对独立期望。原Harness App1017 High实施，旧候选只读，M2阅读未通过/M3未启/自动PAUSED。详[数值反馈范围](acceptance/hf_m2_onnx_shape_feedback02.md)。
+
+> 2026-10-25 M2阅读新反馈：实际ONNX仍用B/T/Dh等维度缩写，完整名称不能只覆盖HTML。按当前维度事实同步原简ONNX的输入/输出/中间维度名，已知数值与数学保持，未知维不猜填；标准Mul输入端口B不冒充batch而误替换。原Harness App1017 High处理，新候选身份，旧产物只读，M2用户阅读未通过/M3未启/自动PAUSED。详[反馈与范围](acceptance/hf_m2_onnx_parameter_feedback01.md)。
+
+> 2026-10-24用户已确认当前阅读并授权下一阶段，启动M2实际四组合覆盖，旧等待状态退出当前待办。补HCA/SWA及配置对应Hash，43层不漏不重，延续现阅读/讲解/完整名称/Excel/ONNX/Netron；M3未启，自动仍PAUSED。详[启动与范围](acceptance/hf_m2_start_2026_10_24.md)、[M2小容器契约](hf_reading_variants_contract_v1.md)，原单层v1保持。
+
+> 反馈12工程交付（2026-10-24）：7b8711f2…统一HTML完整参数/维度名称，保中文含义/值及真实源码转置语义。13项检查通过、512标签全文与528边实际端点保持，模型/Excel/ONNX不变。本轮静态工程passed，用户阅读待确认；自动PAUSED/M2M3未启，未提交推送。详[复核与新版入口](acceptance/hf_m1_harness_names12_review03.md)。
+
+> 最新反馈12（2026-10-24）：HTML参数与shape使用完整名称，覆盖讲解/框图/算子流/参数和张量索引，保中文含义/值、真实源码原文和内部联查id；模型/Excel/ONNX数据保持。原Harness App1017 High处理，Codex验收，自动PAUSED/M2M3未启。详[反馈12](acceptance/hf_m1_reading_feedback12.md)。
+
+> 反馈11工程交付（2026-10-24）：14de8a08…已增加两阶段总览及各模块共38段数据流讲解，输入/维度、共同计算、关键中间值和输出去向可见并可联查。9项受影响检查通过，原图/表格/ONNX/模型数据保持；本轮静态工程passed，实际阅读待用户确认，自动PAUSED/M2M3未启。详[最终复核与入口](acceptance/hf_m1_harness_narrative11_review03.md)。本轮未提交或推送。
+
+> 最新反馈11（2026-10-24）：复杂结构图需配连贯中文讲解，从输入/维度、多输入共同计算到输出去向。先mHC闭环样板，再覆盖现有模块，两阶段准确；仅HTML说明层，保图/JSON/Excel/ONNX与粒度。继续原Harness App1017 High，Codex仅派单验收；自动PAUSED、M1待整体确认/M2M3未启。详[反馈11](acceptance/hf_m1_reading_feedback11.md)。
+
 > 反馈10工程交付（2026-10-21）：原Harness App1017完成b81c1e8a…，两阶段参数/配置/张量共6表加card内独立滚动容器与长路径/公式换行，不裁剪/隐藏列/缩字。Codex核6完整table markup逐字节同2877、祖先card/phase正确、id/内链保持，5受影响检查rc0；36SVG/72ONNX/144目录文件/三数据/启动器保持，151交付/21源/7输入/两真实build同ID第二次reused与2331旧保护核实。本轮表格静态工程passed，真实浏览器CSS/窄屏/缩放与用户阅读未代签。自动PAUSED、M1待整体确认/M2M3未启。详[复核与入口](acceptance/hf_m1_harness_table10_review01.md)。
 
 > 最新反馈10（2026-10-21）：用户截图表格超出card背景，本轮仅修HTML表格宽度/长文本换行与卡片内必要滚动，保完整行列内容/锚点、36图/ONNX/Excel及本地集成。原Harness App1017继续，Codex仅派单验收；详[反馈10](acceptance/hf_m1_reading_feedback10.md)。真实阅读待确认，自动PAUSED/M2M3未启。
