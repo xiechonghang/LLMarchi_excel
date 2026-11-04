@@ -1,8 +1,17 @@
-# LLMarchi_excel — 模型结构阅读工具
+# LLMarchi_excel — 模型结构阅读与理论性能分析
 
-从 Hugging Face Transformers 源码和模型配置静态分析 DeepSeek-V4，生成离线 HTML 结构图、算子流、源码定位、Prefill/Decode 两表 Excel，以及可选的模块级 ONNX/onnxsim 图。当前提供第 4 层的 HF decoder 样板：Attention、CSA/Indexer、KV cache、TopK MoE 与 mHC。
+依据固定版本的模型源码与配置进行静态结构分析，生成离线 HTML 分层阅读页、算子依赖与张量形状、源码定位及 Excel 工作簿。当前已适配 DeepSeek-V4-Flash-0731、GLM-5.3、GLM-5.3-Flash、Qwen3.8-Flash-Next 语言主干和 HiDream-O1-Image 单次前向网络；主入口为 `build-hf --all-variants`。
 
-工具不加载权重、不导入或运行 HF 模型。ONNX 是依据源码与配置构建的结构图，权重作为图输入，不代表已验证 HF 数值等价。其他层型和整网分析仍在计划中。
+工具不加载真实权重、不实例化模型。理论性能估算依赖分析场景、硬件能力与公式假设，不代表实测性能；可选 ONNX 是依据源码与配置构建的结构图，也不代表已验证 HF 数值等价。
+
+## 当前能力与验收状态（2026-11-04）
+
+- **DeepSeek 阅读改善已整体验收**：整网 → 层组 → 模块关系 → 内部算子，覆盖输入/输出端点、mHC、Attention、Q/KV/O、三类缓存、压缩器、Indexer 和 MoE 路由/专家/汇合；最终冻结版为 67 张图、71 个图位。
+- **DeepSeek 正式性能表已接入**：分层构建同时生成新布局 `decoder_performance.xlsx` 与兼容阅读表 `decoder_variants.xlsx`，共用本次结构数据。新布局目前仅接入 DeepSeek。
+- **其余四模型已有结构适配，阅读改善正在逐个推广**：GLM-5.3 已生成新候选，待技术复核与用户视觉审查；GLM-5.3-Flash、Qwen3.8-Flash-Next、HiDream-O1-Image 的本轮阅读改善尚未实施。已注册模型不等于已完成同一轮阅读验收。
+- 语言模型使用 Prefill/Decode 两个阶段，`seqlen` 表示本次新 token 数，`kvcachelen` 表示调用前逻辑历史长度；HiDream 使用单次 forward 与 `Generation` 工作表，不套用语言模型的阶段或 KV cache。
+
+交付身份与范围见 [DeepSeek 最终验收](docs/tasks/deepseek-structure-reading-2026-11-01/D05-acceptance.md)、[性能表集成复核](docs/tasks/excel-performance-style-2026-11-03/E03-codex-review.md)及[四模型阅读推广计划](https://github.com/xiechonghang/LLMarchi_excel/issues/24)。历史冻结版与当前源码重建的候选应分别识别；共享源码变化后，重建可能产生新的内容身份。
 
 ## 克隆与安装
 
@@ -32,11 +41,11 @@ python scripts/download_hf_model.py \
   --endpoint https://huggingface.co
 ```
 
-下载脚本默认跳过权重，请不要加 `-w`。Transformers 检出仅作为文本输入，不需要安装 Transformers、PyTorch 或模型运行环境。当前 HF 构建实际消费根 `config.json` 和六个 Transformers 源文件，并校验其 SHA256；来源缺失或漂移会明确报错，不会沿用旧结论。
+下载脚本默认跳过权重，请不要加 `-w`。Transformers 检出仅作为文本输入，不需要安装 Transformers、PyTorch 或模型运行环境。上述 DeepSeek 适配消费根 `config.json` 和六个 Transformers 源文件，并校验其 SHA256；来源缺失或漂移会明确报错，不会沿用旧结论。
 
 ## 生成 HTML 与 Excel
 
-推荐用分层入口一次生成 DeepSeek 的浏览页与两张 Excel：
+用分层入口生成 DeepSeek 浏览页与两张 Excel：
 
 ```bash
 python structure_reader/scripts/read_model_structure.py build-hf \
@@ -50,6 +59,27 @@ python structure_reader/scripts/read_model_structure.py build-hf \
 - `tables/decoder_variants.xlsx`：兼容阅读表，由旧导出器生成、字节保持不变；与性能表内容身份不同，两表并存。
 - `data/layer_structures.json`、`data/network_overview.json`：两表共用的同一份结构与整网路径。
 - `reports/source_manifest.json`、`run_manifest.json`：输入、工具源码（含性能表导出器）与交付文件身份。
+
+### 生成完整分层图库
+
+DeepSeek 已验收的阅读改善通过 `--archify-layers` 启用；省略此参数仍可生成基础分层页和 Excel，但不包含这套完整图库。
+
+```bash
+python structure_reader/scripts/read_model_structure.py build-hf \
+  --model deepseek_v4_flash_0731_hf --all-variants --archify-layers --json
+```
+
+此模式额外需要 Node.js 和可用的 Archify CLI。工具按 `ARCHIFY_CLI` 环境变量、`structure_reader/configs/tools/archify.json` 的 `cli` 字段、常规技能安装位置依次发现 `bin/archify.mjs`；缺失时会明确报错。图页面位于 `viewer/archify/`，图事实与关系位于 `data/archify/`，由 `viewer/structure.html` 统一导航。
+
+五模型使用相同的分层命令，将 `--model` 替换为以下键；各模型需要准备各自固定版本的输入，来源与范围见[模型说明](structure_reader/README.md#各模型来源与覆盖范围)。
+
+- DeepSeek-V4-Flash-0731：`deepseek_v4_flash_0731_hf`
+- GLM-5.3：`glm_5_3_hf`
+- GLM-5.3-Flash：`glm_5_3_flash_hf`
+- Qwen3.8-Flash-Next：`qwen_3_8_flash_next_hf`（语言主干）
+- HiDream-O1-Image：`hidream_o1_image_hf`（单次 forward）
+
+后四模型只提供 `--all-variants` 入口，不支持单层入口或 `--onnx`；其现有工作簿为 `decoder_variants.xlsx`，本轮未推广 DeepSeek 新性能表布局。
 
 单层旧入口 `build-hf --model deepseek_v4_flash_0731_hf --layer-index 4` 仍保留，产出 `viewer/decoder.html` 与 `tables/decoder_reading.xlsx`；它是旧阅读接口，不生成新的性能表。
 
@@ -77,11 +107,11 @@ bash structure_reader/tools/netron_launcher/setup.sh register --yes
 
 ## 开发与项目资料
 
-源码、配置、测试与文档直接保存在默认分支，可正常 `git clone` 使用。`models/`、`hflib/`、虚拟环境、生成结果与本机协调记录由 `.gitignore` 排除；克隆后按上面步骤准备输入并重新构建，不需要历史备份归档。
+源码、配置、测试与文档位于仓库中；本机最新未提交变更是否已发布，应以远端实际版本为准。`models/`、`hflib/`、虚拟环境、生成结果与本机协调记录由 `.gitignore` 排除；克隆后按上面步骤准备输入并重新构建，不需要历史备份归档。
 
 - [已确认需求](structure_reader/docs/requirements_alignment_2026_10_17.md)
-- [实施计划 v5](hf_docs/project_execution_plan_v5.md)
+- [历史实施计划 v5](hf_docs/project_execution_plan_v5.md)
 - [当前进度与验收边界](structure_reader/docs/progress.md)
-- [工程说明与旧参考实现](structure_reader/README.md)
+- [当前模型范围与旧参考实现](structure_reader/README.md)
 
 `build-hf` 是当前 HF decoder 入口。旧 `inspect` / `build` 参考实现与 DSpark 路径保留供历史研究，不能替代当前 HF 阅读结果；部分旧集成测试依赖本机历史产物，不能将全仓测试视为干净克隆的安装检查。

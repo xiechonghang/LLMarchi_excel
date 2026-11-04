@@ -1,12 +1,21 @@
-> **五模型当前交付索引（2026-10-29，T09）：** 五个 HF 模型键共用同一入口 `build-hf --model <model_key> --all-variants --json`；当前候选、真实产物/SHA、官方来源、覆盖范围与显式拒绝入口见 [docs/model_delivery_index.md](docs/model_delivery_index.md)。索引绑定内容寻址候选（输入+工具源码 SHA），不是 HEAD 提交身份；T05–T08 历史验收候选保留，不冒充当前实现。
->
-> **当前入口（2026-10-29，T08）：** 已注册五个 HF 模型键：`deepseek_v4_flash_0731_hf`、`glm_5_3_hf`（GLM-5.3）、`glm_5_3_flash_hf`（GLM-5.3-Flash）、`qwen_3_8_flash_next_hf`（Qwen3.8-Flash-Next）与 `hidream_o1_image_hf`（HiDream-O1-Image；后四者只提供分层入口）。HiDream-O1-Image 构建：`build-hf --model hidream_o1_image_hf --all-variants --json` → `outputs/hidream_o1_image_hf/<analysis_id>/viewer/structure.html` + **单 sheet**（Generation）工作簿；只分析一次网络 forward（文本 + 像素 patch + 时间步 → x_pred），50/28 步采样/scheduler/CFG 在外部不分析；显式 `--onnx` 或缺少 `--all-variants` 会具名拒绝。Qwen3.8-Flash-Next 构建：`build-hf --model qwen_3_8_flash_next_hf --all-variants --json` → `outputs/qwen_3_8_flash_next_hf/<analysis_id>/viewer/structure.html` + 两页三组工作簿；来源为官方 `Qwen/Qwen3.8-Flash-Next` revision 与本地官方 transformers `qwen4_exp` 实现，只做 text_config 语言主干，视觉/MTP 执行与单层入口不在范围；显式 `--onnx` 会具名拒绝。GLM-5.3-Flash 构建：`build-hf --model glm_5_3_flash_hf --all-variants --json` → `outputs/glm_5_3_flash_hf/<analysis_id>/viewer/structure.html` + 两页三组工作簿；来源为官方 `zai-org/GLM-5.3-Flash` revision 与本地官方 transformers `glm5_next` 实现，只做 text_config 语言主干，视觉/MTP/FP8 执行与单层入口不在范围；显式 `--onnx` 会具名拒绝。GLM-5.3 构建：`build-hf --model glm_5_3_hf --all-variants --json` → `outputs/glm_5_3_hf/<analysis_id>/viewer/structure.html` + 两页三组工作簿。
->
-> **T03 入口说明：** HF 阅读入口为分层结构浏览 `build-hf --model deepseek_v4_flash_0731_hf --all-variants`，产物 `viewer/structure.html`（整网→层组→Block→内部算子，默认只显示当前层级；同一份参数化结构用 seqlen/kvcachelen 场景表达不同调用），同候选另有两表 Excel、`data/layer_structures.json`/`data/network_overview.json`、可选模块级 ONNX/onnxsim 与本地 Netron 链接；单层入口 `--layer-index 4` 仍保留。克隆、依赖安装、固定版本输入准备与运行步骤见[根目录 README](../README.md)。M1 整体用户阅读确认仍待完成——静态工程通过不代签用户阅读验收。下文保留旧 `inspect` / `build` 参考实现与 DSpark 说明，不是当前 HF 路径的快速开始。
-
 # structure_reader
 
-模型特征结构阅读工具。当前状态：**S0 输入扫描 + 结构阅读产物 build 已实现**（`inspect` / `build` 两条命令；四图统一离线阅读页 + DSpark 整体集成图、代表图/变体图数据、场景实例化、同源 CSV 均已交付。DSpark 六组件（Attention/公共 stage×3/首入口/末出口 head/Markov/Confidence）已真实合并为整体集成图并接入 build/阅读页/CSV。阶段全景见 [docs/progress.md](docs/progress.md)）。
+当前主入口为 `build-hf --model <model_key> --all-variants`，用于五模型的静态结构阅读与 Excel 导出。安装、固定输入准备及完整 `--archify-layers` 命令见[根目录 README](../README.md)。
+
+## 当前状态（2026-11-04）
+
+DeepSeek 的本轮分层阅读改善已整体验收（67 张图、71 个图位），正式性能表也已接入主工作区。其余四模型已有结构适配；GLM-5.3 的新阅读候选已实施、待技术与用户视觉复核，另外三模型的本轮改善尚未实施。DeepSeek 新 Excel 布局尚未推广到其他模型。
+
+分层入口输出 `viewer/structure.html`、`data/layer_structures.json`、`data/network_overview.json`、来源/运行清单与 `tables/decoder_variants.xlsx`；DeepSeek 另有正式 `tables/decoder_performance.xlsx`。加入 `--archify-layers` 后生成由主页面导航的原生图库与完整关系数据，需要 Node.js 和 Archify CLI。语言模型使用 Prefill/Decode；HiDream 为单次 forward，工作簿仅 `Generation` 页。
+
+[DeepSeek 最终验收](../docs/tasks/deepseek-structure-reading-2026-11-01/D05-acceptance.md)、[Excel 接入复核](../docs/tasks/excel-performance-style-2026-11-03/E03-codex-review.md)、[当前推广计划](https://github.com/xiechonghang/LLMarchi_excel/issues/24)记录各自验收范围。[历史五模型索引](docs/model_delivery_index.md)保留早期候选；不能据此将本轮推广标为完成。
+
+## 旧 reference / DSpark 实现（历史说明）
+
+以下 `inspect` / `build` 的状态、环境说明和快速开始仅适用于旧路径；当前 HF 用法见后文“分层结构浏览入口”。
+
+
+模型特征结构阅读工具。旧路径状态：**S0 输入扫描 + 结构阅读产物 build 已实现**（`inspect` / `build` 两条命令；四图统一离线阅读页 + DSpark 整体集成图、代表图/变体图数据、场景实例化、同源 CSV 均已交付。DSpark 六组件（Attention/公共 stage×3/首入口/末出口 head/Markov/Confidence）已真实合并为整体集成图并接入 build/阅读页/CSV。阶段全景见 [docs/progress.md](docs/progress.md)）。
 
 ## 它做什么 / 不做什么
 
@@ -31,13 +40,13 @@
 
 - `validate / render / export-tables` 独立子命令（其能力已包含在 build 内）；
 - 运行推理/数值等价验证、运行追踪（未排期）；
-- 除唯一已注册模型外的其它模型适配（HF 生态任意模型需适配层，见 user_guide 常见问题）。
+- 旧 reference/DSpark 路径之外的任意模型自动适配（五个 HF 模型由独立适配器支持）。
 
 DSpark 边界：整体集成图为 reference inference 源码静态取证（HF transformers 实现无对应 DSpark 类，named 差异见产物 `data/dspark/integration.json`）；实际 token/采样/置信度数值、kernel 内部数值、cache 实际内容保持 unknown。完整 V2 独立门禁与用户阅读验收待完成。
 
 **扫描输出不等于最终阅读效果**：`inspect` 扫描包是"输入清单+配置消费"证据，不是用户最终阅读的模型结构图；`build` 产物（`viewer/structure.html`）才是供阅读的模型结构页。
 
-## 快速开始
+## 旧路径快速开始
 
 ```bash
 cd /Users/xiechonghang/Workspace/LLMarchi_excel
@@ -65,7 +74,7 @@ READER_PYTHON="/Users/xiechonghang/.cache/codex-runtimes/codex-primary-runtime/d
 | `outputs/` | 唯一正式产物根目录（`_inventory/` 扫描包、`<model_key>/<analysis_id>/` 阅读产物、`_failed/` 失败诊断、`_coordination/` 开发协调记录） |
 | `.work/` | 可丢弃临时暂存（原子提交前缓冲） |
 
-## 环境
+## 旧路径环境
 
 - Python ≥ 3.11；核心仅标准库，**不需要 torch**（扫描不做张量/权重加载）。
 - 本机实测解释器为 3.12（路径见快速开始）；其他版本未实测，不宣称兼容。
@@ -109,8 +118,11 @@ Excel 每页顶部是可填写的性能配置（seqlen、kvcachelen、batch size
 恢复或补填后回到数值，不默认 0、不折成静态文本。算子区保留符号 shape、模块路径、
 真实层组循环次数与参数联查，另提供“实际输入/输出/权重 shape”公式列（如
 `B×seqlen` 在 B=2、seqlen=4 时为 8）；未知/歧义/超白名单轴写原因，不猜值。
-用户性能公式与 XPU 能力尚未提供：成本列写“待提供”，不生成猜测耗时、不把缺失
-成本记 0；整网串行汇总留待后续任务。
+用户性能公式与 XPU 能力尚未提供：兼容阅读表中缺失的成本列保留“待提供”，不把缺失成本记 0。DeepSeek 新正式性能表已接入，其布局、公式及集成边界以根 README 与 Excel 接入复核为准。
+
+## 各模型来源与覆盖范围
+
+以下为既有模型适配范围，章节中的 T05–T08 是历史任务编号；本轮阅读改善进度以上方“当前状态”为准。
 
 ### GLM-5.3（`glm_5_3_hf`，T05）
 
